@@ -1,4 +1,13 @@
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeSync, chmodSync } from 'node:fs';
+import {
+  closeSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeSync,
+  chmodSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, basename, join, relative } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -184,7 +193,40 @@ function atomicWrite(target: string, content: string): void {
     closeSync(fd);
   }
   if (isPosix) chmodSync(tmp, 0o600);
-  renameSync(tmp, target);
+  renameOverwrite(tmp, target);
+}
+
+// On Windows, renaming over an existing file intermittently fails with EPERM /
+// EACCES / EBUSY: antivirus scanners, the search indexer and editors all take
+// brief handles on a file they just saw written. The operation is still atomic
+// once it succeeds, so the fix is a bounded retry rather than a fallback to a
+// non-atomic copy. Found by the dotenv property test, which only reproduced it
+// after ~250 writes in quick succession.
+const RENAME_RETRY_DELAYS_MS = [1, 2, 5, 10, 25, 50, 100];
+
+function renameOverwrite(tmp: string, target: string): void {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RENAME_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      renameSync(tmp, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw error;
+      lastError = error;
+      const delay = RENAME_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) break;
+      // Synchronous sleep: this path must stay sync because the whole sink API
+      // is sync, and the waits are sub-100ms.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+    }
+  }
+  try {
+    unlinkSync(tmp);
+  } catch {
+    // best effort: leaving a stray tmp file is preferable to masking lastError
+  }
+  throw lastError;
 }
 
 function runGit(cwd: string, args: string[]): number {

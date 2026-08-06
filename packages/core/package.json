@@ -23,6 +23,7 @@
     "@envseal/protocol": "workspace:*",
     "@envseal/registry": "workspace:*",
     "@envseal/detector": "workspace:*",
+    "@envseal/prompters": "workspace:*",
     "jsonc-parser": "^3.3.1",
     "ulid": "^2.3.0"
   },

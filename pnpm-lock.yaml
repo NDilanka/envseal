@@ -47,6 +47,9 @@ importers:
       '@envseal/detector':
         specifier: workspace:*
         version: link:../detector
+      '@envseal/prompters':
+        specifier: workspace:*
+        version: link:../prompters
       '@envseal/protocol':
         specifier: workspace:*
         version: link:../protocol

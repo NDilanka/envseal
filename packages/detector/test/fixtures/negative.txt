@@ -1,0 +1,107 @@
+# Lines that MUST NOT be detected as secrets. A false positive here costs the
+# user an extra command; the point of the corpus is to keep that rate low enough
+# that nobody disables the hook and loses the protection entirely.
+e83c5163316f89bfbde7d9ab23ca2e25604af290
+a1b2c3d4e5f60718293a4b5c6d7e8f9012345678
+9f2a1c4
+deadbeef
+fixed in 7e3b9a2 and reverted in c4d5e6f
+550e8400-e29b-41d4-a716-446655440000
+f47ac10b-58cc-4372-a567-0e02b2c3d479
+00000000-0000-0000-0000-000000000000
+sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==
+integrity="sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+C:\Users\Developer\AppData\Local\Programs\Microsoft VS Code\resources\app\out\vs\workbench
+C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\build-ideal-tree.js
+/usr/local/lib/node_modules/typescript/lib/tsserverlibrary.js
+/home/developer/projects/monorepo/packages/backend/src/infrastructure/persistence/repositories/index.ts
+../../../node_modules/.pnpm/typescript@5.7.2/node_modules/typescript/lib/typescript.js
+https://github.com/anthropics/claude-code/blob/main/README.md
+https://docs.example.com/api/reference/authentication/getting-started
+https://registry.npmjs.org/@types/node/-/node-22.10.2.tgz
+http://localhost:3000/api/v1/users?page=2&limit=50&sort=createdAt
+The quick brown fox jumps over the lazy dog every single morning without fail
+This function returns a promise that resolves when the connection is established
+Authentication middleware validates the bearer token against the session store
+We should probably refactor this before the release candidate goes out next week
+Please review the pull request when you have a moment this afternoon thank you
+const authenticationConfiguration = { provider: 'oauth', scopes: ['read', 'write'] };
+export default function useAuthenticatedRequest(endpoint, options = {}) {
+import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+throw new Error(`Unexpected response status ${response.status} from upstream`);
+await queryRunner.manager.getRepository(UserEntity).findOneOrFail({ where: { id } });
+if (typeof value === 'string' && value.length > 0 && !Number.isNaN(Number(value))) {
+.container{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.btn-primary:hover,.btn-secondary:focus{background-color:#2563eb;border-color:#1d4ed8}
+var e=function(t){return t&&t.__esModule?t:{default:t}},n=Object.assign,r=Object.keys
+!function(e,t){"object"==typeof exports&&"undefined"!=typeof module?t(exports):e.lib={}
+#2563eb
+#1d4ed8
+#ffffff
+#0f172a
+rgba(15, 23, 42, 0.85)
+^18.3.1
+~5.7.2
+>=20.11.0 <23
+1.2.3-beta.4+build.567
+2026-08-07T03:14:15.926Z
+2025-12-31T23:59:59.999+05:30
+1754535255926
+sha256:9c8f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4b3a29187
+docker.io/library/node@sha256:1a2b3c4d5e6f7890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890
+registry.example.com/team/service:v2.14.3-alpine
+at Object.<anonymous> (/app/dist/server.js:142:19)
+at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at Module._compile (node:internal/modules/cjs/loader:1356:14)
+| Column A | Column B | Column C | Column D |
+|----------|----------|----------|----------|
+| a value  | another  | and more | the last |
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+000000000000000000000000000000000000000000000000
+------------------------------------------------
+================================================
+lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor
+Content-Type: application/json; charset=utf-8
+Accept-Encoding: gzip, deflate, br, zstd
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
+the configuration file should be committed to version control without any changes
+documentation describes the authentication flow in considerable detail already
+getUserAuthenticationTokenFromSessionStorageOrRedirectToLoginPage
+handleAsynchronousValidationErrorsWithRetryAndExponentialBackoff
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+NODE_ENV=production
+LOG_LEVEL=debug
+PORT=3000
+VITE_PUBLIC_APP_NAME=Example Application
+NEXT_PUBLIC_SITE_URL=https://example.com
+REACT_APP_FEATURE_FLAG_ENABLED=true
+postgres://localhost:5432/development
+redis://127.0.0.1:6379
+mongodb://localhost:27017/testdb
+mysql://127.0.0.1:3306/local
+npm install --save-dev @typescript-eslint/eslint-plugin @typescript-eslint/parser
+pnpm --filter @envseal/detector test --reporter=verbose --coverage
+git rebase --onto main feature/authentication-refactor HEAD~3
+docker compose -f docker-compose.production.yml up --detach --build
+kubectl get pods --namespace production --selector app=api --output wide
+SELECT id, email, created_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC
+CREATE INDEX CONCURRENTLY idx_users_tenant_created ON users (tenant_id, created_at);
+Lorem ipsum has been the industry standard dummy text ever since the 1500s
+Copyright 2026 Example Corporation. All rights reserved worldwide.
+Licensed under the Apache License, Version 2.0 (the "License");
+您好世界这是一个测试字符串用于验证检测器不会误报中文文本内容
+こんにちは世界これはテスト文字列です検出器が日本語で誤検出しないことを確認します
+Здравствуйте это тестовая строка для проверки детектора на кириллице
+function calculateExponentialBackoffDelayWithJitter(attempt, baseDelayMilliseconds) {
+const MAXIMUM_CONCURRENT_CONNECTIONS_PER_UPSTREAM_HOST = 128;
+interface AuthenticationProviderConfiguration extends BaseProviderConfiguration {}
+type SerializedTransactionPayloadWithMetadata = Readonly<Record<string, unknown>>;
+0123456789012345678901234567890123456789
+aaaaaaaabbbbbbbbccccccccddddddddeeeeeeee
+test test test test test test test test test test test test test test test

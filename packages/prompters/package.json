@@ -20,7 +20,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@envseal/protocol": "workspace:*",
-    "@envseal/core": "workspace:*"
+    "@envseal/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "undici": "^7.2.0"
   }
 }

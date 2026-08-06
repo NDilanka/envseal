@@ -11,11 +11,15 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "envseal-mcp": "./dist/bin.js"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && pnpm gen:dialects",
+    "gen:dialects": "tsx scripts/gen-dialects.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -23,6 +27,12 @@
     "@envseal/protocol": "workspace:*",
     "@envseal/core": "workspace:*",
     "@envseal/prompters": "workspace:*",
-    "@envseal/registry": "workspace:*"
+    "@envseal/registry": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "zod-to-json-schema": "^3.24.1"
   }
 }

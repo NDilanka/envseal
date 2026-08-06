@@ -15,8 +15,16 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && pnpm gen:schemas",
+    "gen:schemas": "tsx scripts/gen-schemas.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "zod-to-json-schema": "^3.24.1"
   }
 }

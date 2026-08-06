@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://envseal.dev/spec/sep-1/tools.schema.json",
+  "title": "EnvSeal SEP/1 tools",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tools"
+  ],
+  "properties": {
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "env_describe",
+        "env_declare",
+        "env_request",
+        "env_await",
+        "env_verify",
+        "env_use",
+        "env_revoke"
+      ],
+      "properties": {
+        "env_describe": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "env_declare": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 280
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "secret": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "format": {
+                    "type": "object",
+                    "properties": {
+                      "pattern": {
+                        "type": "string"
+                      },
+                      "minLength": {
+                        "type": "integer"
+                      },
+                      "maxLength": {
+                        "type": "integer"
+                      },
+                      "example": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "provider": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "signupUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "docsUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "rotateUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "scopesNeeded": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "verify": {
+                    "type": "object",
+                    "properties": {
+                      "method": {
+                        "type": "string",
+                        "enum": [
+                          "GET",
+                          "POST"
+                        ]
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "headerTemplate": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "expectStatus": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "default": [
+                          200
+                        ]
+                      }
+                    },
+                    "required": [
+                      "method",
+                      "url",
+                      "headerTemplate"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "sink": {
+                    "type": "string",
+                    "enum": [
+                      "dotenv",
+                      "keychain",
+                      "sops",
+                      "onepassword",
+                      "doppler",
+                      "vault",
+                      "external"
+                    ],
+                    "default": "dotenv"
+                  },
+                  "rotation": {
+                    "type": "object",
+                    "properties": {
+                      "maxAgeDays": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maxAgeDays"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "key",
+                  "description"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "additionalProperties": false
+        },
+        "env_request": {
+          "type": "object",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 280
+            }
+          },
+          "required": [
+            "keys",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "env_await": {
+          "type": "object",
+          "properties": {
+            "ticket": {
+              "type": "string"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 120000,
+              "default": 90000
+            }
+          },
+          "required": [
+            "ticket"
+          ],
+          "additionalProperties": false
+        },
+        "env_verify": {
+          "type": "object",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "additionalProperties": false
+        },
+        "env_use": {
+          "type": "object",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "keys",
+            "command"
+          ],
+          "additionalProperties": false
+        },
+        "env_revoke": {
+          "type": "object",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

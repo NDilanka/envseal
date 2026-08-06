@@ -1,0 +1,16 @@
+{
+  "id": "redis",
+  "name": "Redis",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "REDIS_URL",
+      "description": "Redis connection string",
+      "format": {
+        "prefix": "redis://",
+        "example": "redis://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "docsUrl": "https://redis.io/documentation"
+    }
+  ]
+}

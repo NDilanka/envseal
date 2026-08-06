@@ -1,0 +1,16 @@
+{
+  "id": "mysql",
+  "name": "MySQL",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "MYSQL_URL",
+      "description": "MySQL database connection string",
+      "format": {
+        "prefix": "mysql://",
+        "example": "mysql://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "docsUrl": "https://dev.mysql.com/doc/"
+    }
+  ]
+}

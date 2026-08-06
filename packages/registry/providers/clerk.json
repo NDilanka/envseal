@@ -1,0 +1,32 @@
+{
+  "id": "clerk",
+  "name": "Clerk",
+  "category": "auth",
+  "keys": [
+    {
+      "envVar": "CLERK_SECRET_KEY",
+      "description": "Clerk secret key",
+      "format": {
+        "pattern": "^sk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+        "prefix": "sk_",
+        "minLength": 32,
+        "example": "sk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dashboard.clerk.com/",
+      "docsUrl": "https://clerk.com/docs",
+      "rotateUrl": "https://dashboard.clerk.com/"
+    },
+    {
+      "envVar": "CLERK_PUBLISHABLE_KEY",
+      "description": "Clerk publishable key",
+      "format": {
+        "pattern": "^pk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+        "prefix": "pk_",
+        "minLength": 32,
+        "example": "pk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dashboard.clerk.com/",
+      "docsUrl": "https://clerk.com/docs"
+    }
+  ]
+}

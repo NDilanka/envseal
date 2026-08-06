@@ -1,0 +1,32 @@
+{
+  "id": "aws",
+  "name": "Amazon Web Services",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "AWS_ACCESS_KEY_ID",
+      "description": "AWS access key ID",
+      "format": {
+        "pattern": "^AKIA[0-9A-Z]{16}$",
+        "prefix": "AKIA",
+        "minLength": 20,
+        "maxLength": 20,
+        "example": "AKIA11111111111111XX"
+      },
+      "docsUrl": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html",
+      "rotateUrl": "https://console.aws.amazon.com/iam/home#/security_credentials"
+    },
+    {
+      "envVar": "AWS_SECRET_ACCESS_KEY",
+      "description": "AWS secret access key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{40}$",
+        "minLength": 40,
+        "maxLength": 40,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "docsUrl": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html",
+      "rotateUrl": "https://console.aws.amazon.com/iam/home#/security_credentials"
+    }
+  ]
+}

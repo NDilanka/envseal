@@ -1,0 +1,16 @@
+{
+  "id": "postgres",
+  "name": "PostgreSQL",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "DATABASE_URL",
+      "description": "PostgreSQL database connection string",
+      "format": {
+        "prefix": "postgres://",
+        "example": "postgres://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "docsUrl": "https://www.postgresql.org/docs/"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "openrouter",
+  "name": "OpenRouter",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "OPENROUTER_API_KEY",
+      "description": "OpenRouter API key",
+      "format": {
+        "pattern": "^sk-or-[A-Za-z0-9_-]{32,}$",
+        "prefix": "sk-or-",
+        "minLength": 32,
+        "example": "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://openrouter.ai/keys",
+      "docsUrl": "https://openrouter.ai/docs",
+      "rotateUrl": "https://openrouter.ai/keys",
+      "verify": {
+        "method": "GET",
+        "url": "https://openrouter.ai/api/v1/key",
+        "headerTemplate": {
+          "Authorization": "Bearer {{value}}"
+        },
+        "expectStatus": [200]
+      }
+    }
+  ]
+}

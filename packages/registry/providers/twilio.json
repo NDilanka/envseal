@@ -1,0 +1,32 @@
+{
+  "id": "twilio",
+  "name": "Twilio",
+  "category": "messaging",
+  "keys": [
+    {
+      "envVar": "TWILIO_ACCOUNT_SID",
+      "description": "Twilio account SID",
+      "format": {
+        "pattern": "^AC[A-Za-z0-9]{32}$",
+        "prefix": "AC",
+        "minLength": 34,
+        "maxLength": 34,
+        "example": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://www.twilio.com/",
+      "docsUrl": "https://www.twilio.com/docs"
+    },
+    {
+      "envVar": "TWILIO_AUTH_TOKEN",
+      "description": "Twilio auth token",
+      "format": {
+        "pattern": "^[A-Za-z0-9]{32}$",
+        "minLength": 32,
+        "maxLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://www.twilio.com/",
+      "docsUrl": "https://www.twilio.com/docs"
+    }
+  ]
+}

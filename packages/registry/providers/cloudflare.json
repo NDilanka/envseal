@@ -1,0 +1,30 @@
+{
+  "id": "cloudflare",
+  "name": "Cloudflare",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "CLOUDFLARE_API_TOKEN",
+      "description": "Cloudflare API token",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{40,}$",
+        "minLength": 40,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dash.cloudflare.com/profile/api-tokens",
+      "docsUrl": "https://developers.cloudflare.com/api/"
+    },
+    {
+      "envVar": "CLOUDFLARE_ZONE_ID",
+      "description": "Cloudflare zone ID",
+      "format": {
+        "pattern": "^[a-f0-9]{32}$",
+        "minLength": 32,
+        "maxLength": 32,
+        "example": "11111111111111111111111111111111"
+      },
+      "signupUrl": "https://dash.cloudflare.com/",
+      "docsUrl": "https://developers.cloudflare.com/"
+    }
+  ]
+}

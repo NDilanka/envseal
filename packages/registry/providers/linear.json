@@ -1,0 +1,20 @@
+{
+  "id": "linear",
+  "name": "Linear",
+  "category": "other",
+  "keys": [
+    {
+      "envVar": "LINEAR_API_KEY",
+      "description": "Linear API key",
+      "format": {
+        "pattern": "^lin_[A-Za-z0-9_-]{40,}$",
+        "prefix": "lin_",
+        "minLength": 40,
+        "example": "lin_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://linear.app/settings/api",
+      "docsUrl": "https://developers.linear.app/",
+      "rotateUrl": "https://linear.app/settings/api"
+    }
+  ]
+}

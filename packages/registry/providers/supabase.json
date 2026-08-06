@@ -1,0 +1,38 @@
+{
+  "id": "supabase",
+  "name": "Supabase",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "SUPABASE_URL",
+      "description": "Supabase project URL",
+      "format": {
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://supabase.com/",
+      "docsUrl": "https://supabase.com/docs"
+    },
+    {
+      "envVar": "SUPABASE_ANON_KEY",
+      "description": "Supabase anonymous key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://supabase.com/",
+      "docsUrl": "https://supabase.com/docs"
+    },
+    {
+      "envVar": "SUPABASE_SERVICE_ROLE_KEY",
+      "description": "Supabase service role key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://supabase.com/",
+      "docsUrl": "https://supabase.com/docs"
+    }
+  ]
+}

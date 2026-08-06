@@ -1,0 +1,19 @@
+{
+  "id": "posthog",
+  "name": "PostHog",
+  "category": "observability",
+  "keys": [
+    {
+      "envVar": "POSTHOG_API_KEY",
+      "description": "PostHog API key",
+      "format": {
+        "pattern": "^phc_[A-Za-z0-9_-]{32,}$",
+        "prefix": "phc_",
+        "minLength": 32,
+        "example": "phc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://posthog.com/",
+      "docsUrl": "https://posthog.com/docs"
+    }
+  ]
+}

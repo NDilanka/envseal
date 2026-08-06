@@ -1,0 +1,20 @@
+{
+  "id": "firebase",
+  "name": "Firebase",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "FIREBASE_API_KEY",
+      "description": "Firebase API key",
+      "format": {
+        "pattern": "^AIza[0-9A-Za-z_-]{35}$",
+        "prefix": "AIza",
+        "minLength": 39,
+        "maxLength": 39,
+        "example": "AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://console.firebase.google.com/",
+      "docsUrl": "https://firebase.google.com/docs"
+    }
+  ]
+}

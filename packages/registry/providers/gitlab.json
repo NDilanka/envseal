@@ -1,0 +1,20 @@
+{
+  "id": "gitlab",
+  "name": "GitLab",
+  "category": "vcs",
+  "keys": [
+    {
+      "envVar": "GITLAB_TOKEN",
+      "description": "GitLab personal access token",
+      "format": {
+        "pattern": "^glpat-[A-Za-z0-9_-]{20,}$",
+        "prefix": "glpat-",
+        "minLength": 20,
+        "example": "glpat-XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://gitlab.com/-/user_settings/personal_access_tokens",
+      "docsUrl": "https://docs.gitlab.com/ee/api/",
+      "rotateUrl": "https://gitlab.com/-/user_settings/personal_access_tokens"
+    }
+  ]
+}

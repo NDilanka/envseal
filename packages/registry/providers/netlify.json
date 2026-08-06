@@ -1,0 +1,18 @@
+{
+  "id": "netlify",
+  "name": "Netlify",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "NETLIFY_TOKEN",
+      "description": "Netlify API token",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://app.netlify.com/user/applications/personal",
+      "docsUrl": "https://docs.netlify.com/"
+    }
+  ]
+}

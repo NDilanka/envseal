@@ -1,0 +1,28 @@
+{
+  "id": "neon",
+  "name": "Neon",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "NEON_DATABASE_URL",
+      "description": "Neon PostgreSQL connection string",
+      "format": {
+        "prefix": "postgres://",
+        "example": "postgres://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://neon.tech/",
+      "docsUrl": "https://neon.tech/docs"
+    },
+    {
+      "envVar": "NEON_API_KEY",
+      "description": "Neon API key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://neon.tech/",
+      "docsUrl": "https://neon.tech/docs"
+    }
+  ]
+}

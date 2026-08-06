@@ -1,0 +1,16 @@
+{
+  "id": "sentry",
+  "name": "Sentry",
+  "category": "observability",
+  "keys": [
+    {
+      "envVar": "SENTRY_DSN",
+      "description": "Sentry error tracking DSN",
+      "format": {
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://sentry.io/",
+      "docsUrl": "https://docs.sentry.io/"
+    }
+  ]
+}

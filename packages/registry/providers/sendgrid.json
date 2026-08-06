@@ -1,0 +1,20 @@
+{
+  "id": "sendgrid",
+  "name": "SendGrid",
+  "category": "email",
+  "keys": [
+    {
+      "envVar": "SENDGRID_API_KEY",
+      "description": "SendGrid email API key",
+      "format": {
+        "pattern": "^SG\\.[A-Za-z0-9_-]{64,}$",
+        "prefix": "SG.",
+        "minLength": 64,
+        "example": "SG.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://sendgrid.com/",
+      "docsUrl": "https://sendgrid.com/docs",
+      "rotateUrl": "https://app.sendgrid.com/settings/api_keys"
+    }
+  ]
+}

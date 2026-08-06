@@ -1,0 +1,20 @@
+{
+  "id": "notion",
+  "name": "Notion",
+  "category": "other",
+  "keys": [
+    {
+      "envVar": "NOTION_API_KEY",
+      "description": "Notion API key",
+      "format": {
+        "pattern": "^ntn_[A-Za-z0-9_-]{64,}$",
+        "prefix": "ntn_",
+        "minLength": 64,
+        "example": "ntn_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://www.notion.so/my-integrations",
+      "docsUrl": "https://developers.notion.com/",
+      "rotateUrl": "https://www.notion.so/my-integrations"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "stripe",
+  "name": "Stripe",
+  "category": "payments",
+  "keys": [
+    {
+      "envVar": "STRIPE_SECRET_KEY",
+      "description": "Stripe secret API key",
+      "format": {
+        "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,}$",
+        "prefix": "sk_test_",
+        "minLength": 32,
+        "example": "sk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dashboard.stripe.com/apikeys",
+      "docsUrl": "https://stripe.com/docs/keys",
+      "rotateUrl": "https://dashboard.stripe.com/apikeys",
+      "verify": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/balance",
+        "headerTemplate": {
+          "Authorization": "Bearer {{value}}"
+        },
+        "expectStatus": [200]
+      }
+    },
+    {
+      "envVar": "STRIPE_PUBLISHABLE_KEY",
+      "description": "Stripe publishable API key",
+      "format": {
+        "pattern": "^pk_(live|test)_[A-Za-z0-9_-]{24,}$",
+        "prefix": "pk_test_",
+        "minLength": 32,
+        "example": "pk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dashboard.stripe.com/apikeys",
+      "docsUrl": "https://stripe.com/docs/keys",
+      "rotateUrl": "https://dashboard.stripe.com/apikeys"
+    }
+  ]
+}

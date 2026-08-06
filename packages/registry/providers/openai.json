@@ -1,0 +1,28 @@
+{
+  "id": "openai",
+  "name": "OpenAI",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "OPENAI_API_KEY",
+      "description": "API key for OpenAI API access",
+      "format": {
+        "pattern": "^sk-[A-Za-z0-9_-]{20,}$",
+        "prefix": "sk-",
+        "minLength": 20,
+        "example": "sk-XXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://platform.openai.com/account/api-keys",
+      "docsUrl": "https://platform.openai.com/docs/api-reference/authentication",
+      "rotateUrl": "https://platform.openai.com/account/api-keys",
+      "verify": {
+        "method": "GET",
+        "url": "https://api.openai.com/v1/models",
+        "headerTemplate": {
+          "Authorization": "Bearer {{value}}"
+        },
+        "expectStatus": [200]
+      }
+    }
+  ]
+}

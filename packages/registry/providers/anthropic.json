@@ -1,0 +1,29 @@
+{
+  "id": "anthropic",
+  "name": "Anthropic",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "ANTHROPIC_API_KEY",
+      "description": "API key for Anthropic Claude API access",
+      "format": {
+        "pattern": "^sk-ant-[A-Za-z0-9_-]{20,}$",
+        "prefix": "sk-ant-",
+        "minLength": 20,
+        "example": "sk-ant-XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://console.anthropic.com/",
+      "docsUrl": "https://docs.anthropic.com/",
+      "rotateUrl": "https://console.anthropic.com/",
+      "verify": {
+        "method": "GET",
+        "url": "https://api.anthropic.com/v1/models",
+        "headerTemplate": {
+          "x-api-key": "{{value}}",
+          "anthropic-version": "2023-06-01"
+        },
+        "expectStatus": [200]
+      }
+    }
+  ]
+}

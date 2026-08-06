@@ -1,0 +1,28 @@
+{
+  "id": "groq",
+  "name": "Groq",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "GROQ_API_KEY",
+      "description": "Groq API key",
+      "format": {
+        "pattern": "^gsk_[A-Za-z0-9_-]{32,}$",
+        "prefix": "gsk_",
+        "minLength": 32,
+        "example": "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://console.groq.com/keys",
+      "docsUrl": "https://console.groq.com/docs",
+      "rotateUrl": "https://console.groq.com/keys",
+      "verify": {
+        "method": "GET",
+        "url": "https://api.groq.com/openai/v1/models",
+        "headerTemplate": {
+          "Authorization": "Bearer {{value}}"
+        },
+        "expectStatus": [200]
+      }
+    }
+  ]
+}

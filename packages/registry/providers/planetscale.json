@@ -1,0 +1,17 @@
+{
+  "id": "planetscale",
+  "name": "PlanetScale",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "PLANETSCALE_DATABASE_URL",
+      "description": "PlanetScale database connection string",
+      "format": {
+        "prefix": "mysql://",
+        "example": "mysql://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://planetscale.com/",
+      "docsUrl": "https://planetscale.com/docs"
+    }
+  ]
+}

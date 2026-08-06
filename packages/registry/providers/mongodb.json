@@ -1,0 +1,16 @@
+{
+  "id": "mongodb",
+  "name": "MongoDB",
+  "category": "database",
+  "keys": [
+    {
+      "envVar": "MONGODB_URI",
+      "description": "MongoDB connection string",
+      "format": {
+        "prefix": "mongodb://",
+        "example": "mongodb://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "docsUrl": "https://docs.mongodb.com/"
+    }
+  ]
+}

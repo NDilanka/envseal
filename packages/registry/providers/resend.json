@@ -1,0 +1,28 @@
+{
+  "id": "resend",
+  "name": "Resend",
+  "category": "email",
+  "keys": [
+    {
+      "envVar": "RESEND_API_KEY",
+      "description": "Resend email API key",
+      "format": {
+        "pattern": "^re_[A-Za-z0-9_-]{32,}$",
+        "prefix": "re_",
+        "minLength": 32,
+        "example": "re_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://resend.com/",
+      "docsUrl": "https://resend.com/docs",
+      "rotateUrl": "https://resend.com/api-keys",
+      "verify": {
+        "method": "GET",
+        "url": "https://api.resend.com/domains",
+        "headerTemplate": {
+          "Authorization": "Bearer {{value}}"
+        },
+        "expectStatus": [200]
+      }
+    }
+  ]
+}

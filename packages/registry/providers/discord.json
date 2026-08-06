@@ -1,0 +1,18 @@
+{
+  "id": "discord",
+  "name": "Discord",
+  "category": "messaging",
+  "keys": [
+    {
+      "envVar": "DISCORD_BOT_TOKEN",
+      "description": "Discord bot token",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,}$",
+        "minLength": 68,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXX.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://discord.com/developers/applications",
+      "docsUrl": "https://discord.com/developers/docs"
+    }
+  ]
+}

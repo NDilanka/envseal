@@ -1,0 +1,20 @@
+{
+  "id": "deepseek",
+  "name": "DeepSeek",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "DEEPSEEK_API_KEY",
+      "description": "DeepSeek API key",
+      "format": {
+        "pattern": "^sk-[A-Za-z0-9_-]{32,}$",
+        "prefix": "sk-",
+        "minLength": 32,
+        "example": "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://platform.deepseek.com/api_keys",
+      "docsUrl": "https://api-docs.deepseek.com/",
+      "rotateUrl": "https://platform.deepseek.com/api_keys"
+    }
+  ]
+}

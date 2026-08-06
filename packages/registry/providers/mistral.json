@@ -1,0 +1,19 @@
+{
+  "id": "mistral",
+  "name": "Mistral AI",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "MISTRAL_API_KEY",
+      "description": "Mistral AI API key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://console.mistral.ai/api-keys/",
+      "docsUrl": "https://docs.mistral.ai/",
+      "rotateUrl": "https://console.mistral.ai/api-keys/"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "cohere",
+  "name": "Cohere",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "COHERE_API_KEY",
+      "description": "Cohere API key",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://dashboard.cohere.ai/api-keys",
+      "docsUrl": "https://docs.cohere.ai/",
+      "rotateUrl": "https://dashboard.cohere.ai/api-keys"
+    }
+  ]
+}

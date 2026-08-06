@@ -1,0 +1,19 @@
+{
+  "id": "vercel",
+  "name": "Vercel",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "VERCEL_TOKEN",
+      "description": "Vercel API token",
+      "format": {
+        "pattern": "^[A-Za-z0-9_-]{24}$",
+        "minLength": 24,
+        "maxLength": 24,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://vercel.com/account/tokens",
+      "docsUrl": "https://vercel.com/docs"
+    }
+  ]
+}

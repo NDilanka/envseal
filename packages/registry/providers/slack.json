@@ -1,0 +1,30 @@
+{
+  "id": "slack",
+  "name": "Slack",
+  "category": "messaging",
+  "keys": [
+    {
+      "envVar": "SLACK_BOT_TOKEN",
+      "description": "Slack bot API token",
+      "format": {
+        "pattern": "^xoxb-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-[A-Za-z0-9_-]{24,}$",
+        "prefix": "xoxb-",
+        "minLength": 32,
+        "example": "xoxb-XXXX-XXXX-XXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://api.slack.com/apps",
+      "docsUrl": "https://api.slack.com/docs"
+    },
+    {
+      "envVar": "SLACK_SIGNING_SECRET",
+      "description": "Slack signing secret",
+      "format": {
+        "pattern": "^[A-Za-z0-9]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://api.slack.com/apps",
+      "docsUrl": "https://api.slack.com/docs"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "azure",
+  "name": "Microsoft Azure",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "AZURE_SUBSCRIPTION_ID",
+      "description": "Azure subscription ID",
+      "format": {
+        "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+        "minLength": 36,
+        "maxLength": 36,
+        "example": "11111111-1111-1111-1111-111111111111"
+      },
+      "signupUrl": "https://azure.microsoft.com/",
+      "docsUrl": "https://docs.microsoft.com/azure/"
+    },
+    {
+      "envVar": "AZURE_CLIENT_ID",
+      "description": "Azure client ID",
+      "format": {
+        "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+        "minLength": 36,
+        "maxLength": 36,
+        "example": "11111111-1111-1111-1111-111111111111"
+      },
+      "signupUrl": "https://azure.microsoft.com/",
+      "docsUrl": "https://docs.microsoft.com/azure/"
+    },
+    {
+      "envVar": "AZURE_CLIENT_SECRET",
+      "description": "Azure client secret",
+      "format": {
+        "pattern": "^[A-Za-z0-9._~-]{32,}$",
+        "minLength": 32,
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://azure.microsoft.com/",
+      "docsUrl": "https://docs.microsoft.com/azure/"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "huggingface",
+  "name": "Hugging Face",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "HUGGINGFACE_API_KEY",
+      "description": "Hugging Face API key",
+      "format": {
+        "pattern": "^hf_[A-Za-z0-9_-]{32,}$",
+        "prefix": "hf_",
+        "minLength": 32,
+        "example": "hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://huggingface.co/settings/tokens",
+      "docsUrl": "https://huggingface.co/docs",
+      "rotateUrl": "https://huggingface.co/settings/tokens"
+    }
+  ]
+}

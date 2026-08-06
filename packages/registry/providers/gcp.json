@@ -1,0 +1,16 @@
+{
+  "id": "gcp",
+  "name": "Google Cloud Platform",
+  "category": "infra",
+  "keys": [
+    {
+      "envVar": "GOOGLE_APPLICATION_CREDENTIALS",
+      "description": "Path to or JSON content of GCP service account key",
+      "format": {
+        "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://cloud.google.com/",
+      "docsUrl": "https://cloud.google.com/docs"
+    }
+  ]
+}

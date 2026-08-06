@@ -1,0 +1,21 @@
+{
+  "id": "google-ai",
+  "name": "Google AI Studio",
+  "category": "llm",
+  "keys": [
+    {
+      "envVar": "GOOGLE_API_KEY",
+      "description": "Google AI Studio API key",
+      "format": {
+        "pattern": "^AIza[0-9A-Za-z_-]{35}$",
+        "prefix": "AIza",
+        "minLength": 39,
+        "maxLength": 39,
+        "example": "AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      },
+      "signupUrl": "https://makersuite.google.com/app/apikey",
+      "docsUrl": "https://ai.google.dev/tutorials/python_quickstart",
+      "rotateUrl": "https://makersuite.google.com/app/apikey"
+    }
+  ]
+}

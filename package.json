@@ -11,7 +11,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && pnpm test:portability",
+    "test:portability": "vitest run --config vitest.config.ts",
+    "test:zero-leak": "pnpm --filter @envseal/mcp-server test -- zero-leak",
     "lint": "eslint .",
     "clean": "pnpm -r exec rm -rf dist tsconfig.tsbuildinfo"
   },

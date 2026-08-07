@@ -5,7 +5,10 @@ import { createStubPrompter } from './test-prompter.js';
  * Create a broker for the given project root.
  * Uses the stub prompter if ENVSEAL_TEST_MODE and ENVSEAL_TEST_PROMPTER_VALUE are both set.
  */
-export async function createBroker(root: string): Promise<Broker> {
+export async function createBroker(
+  root: string,
+  opts?: { onConfirm?: ConstructorParameters<typeof Broker>[0]['onConfirm'] },
+): Promise<Broker> {
   let prompter;
 
   // Double-gated stub prompter for testing only
@@ -16,7 +19,7 @@ export async function createBroker(root: string): Promise<Broker> {
     prompter = createStubPrompter(process.env.ENVSEAL_TEST_PROMPTER_VALUE);
   }
 
-  return new Broker({ root, prompter });
+  return new Broker({ root, prompter, onConfirm: opts?.onConfirm });
 }
 
 /**
@@ -35,6 +38,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
   while (i < argv.length) {
     const arg = argv[i];
     if (arg === undefined) break;
+
+    // `--` is the end-of-flags terminator, not a flag. It must be checked
+    // before the `startsWith('--')` branch, which would otherwise parse it as a
+    // flag named '' and swallow the command that follows — breaking
+    // `envseal run -- <cmd>` entirely.
+    if (arg === '--') {
+      args.push('--');
+      for (let j = i + 1; j < argv.length; j++) {
+        const a = argv[j];
+        if (a !== undefined) args.push(a);
+      }
+      break;
+    }
 
     if (arg.startsWith('--')) {
       const eqIndex = arg.indexOf('=');

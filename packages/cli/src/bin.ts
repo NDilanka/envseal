@@ -90,7 +90,7 @@ async function main(): Promise<void> {
           console.error('Error: run requires a command after --');
           process.exit(EXIT.USAGE);
         }
-        await run(root, cmdArgs, json);
+        await run(root, cmdArgs, json, parsed.flags.yes === true);
         break;
       }
 

@@ -142,18 +142,20 @@ describe('user-prompt-submit hook', () => {
       // sk- is a real prefix detected by @envseal/detector
       const msg = 'Test key: sk-proj-abc123def456ghi789jkl';
       const result = redactUserMessage(msg);
-      if (result.detected) {
-        expect(result.modifiedMessage).not.toContain('sk-proj-abc123');
-        expect(result.modifiedMessage).toContain('«redacted-secret»');
-      }
+      // Unconditional: `if (result.detected)` would make this pass silently on
+      // the exact regression it exists to catch — a key that stops being seen.
+      expect(result.detected).toBe(true);
+      expect(result.modifiedMessage).not.toContain('sk-proj-abc123');
+      // High-confidence matches carry the provider label; only the generic
+      // entropy fallback emits the bare token.
+      expect(result.modifiedMessage).toMatch(/«redacted(-secret|:[^»]+)»/);
     });
 
     it('detects and redacts GitHub token', () => {
       const msg = 'GitHub token: ghp_ABCDEFGHIJKLMNOPabcdefghijklmnopqrst';
       const result = redactUserMessage(msg);
-      if (result.detected) {
-        expect(result.modifiedMessage).not.toContain('ghp_');
-      }
+      expect(result.detected).toBe(true);
+      expect(result.modifiedMessage).not.toContain('ghp_');
     });
   });
 
@@ -228,19 +230,22 @@ describe('user-prompt-submit hook', () => {
   describe('redactUserMessage - multiple detections', () => {
     it('redacts multiple secrets in one message', () => {
       // If the detector finds multiple secrets, all should be redacted
-      const msg = 'Key1: sk-proj-secret1 and Key2: ghp_secret2';
+      const msg =
+        'Key1: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX and Key2: ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
       const result = redactUserMessage(msg);
-      if (result.detected) {
-        // Both should be replaced
-        const count = (result.modifiedMessage.match(/«redacted-secret»/g) ?? []).length;
-        expect(count).toBeGreaterThanOrEqual(1);
-      }
+      expect(result.detected).toBe(true);
+      // Both keys on the line must be replaced, not just the first.
+      const count = (result.modifiedMessage.match(/«redacted(?:-secret|:[^»]+)»/g) ?? []).length;
+      expect(count).toBeGreaterThanOrEqual(2);
     });
 
     it('includes all unique labels', () => {
-      const msg = 'Key1: sk-proj-secret1 and Key2: ghp_secret2';
+      const msg =
+        'Key1: sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX and Key2: ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
       const result = redactUserMessage(msg);
-      if (result.detected && result.labels.length > 0) {
+      expect(result.detected).toBe(true);
+      expect(result.labels.length).toBeGreaterThan(0);
+      {
         // Should have at least one label
         expect(result.labels[0]).toBeDefined();
       }
@@ -269,12 +274,14 @@ describe('user-prompt-submit hook', () => {
     });
 
     it('notice is safe to print to stderr', () => {
-      const msg = 'Key: sk-proj-secret';
+      // Must be realistic length: the detector deliberately ignores short
+      // prefix matches, since `sk-proj-secret` cannot be a real credential.
+      const fake = 'sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+      const msg = `Key: ${fake}`;
       const result = redactUserMessage(msg);
-      if (result.notice) {
-        // Notice should only contain sanitized information
-        expect(() => process.stderr.write(result.notice)).not.toThrow();
-      }
+      // The notice must exist and must never carry the value it just caught.
+      expect(result.notice).toBeTruthy();
+      expect(result.notice ?? '').not.toContain(fake);
     });
   });
 });

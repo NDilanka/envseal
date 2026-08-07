@@ -1,0 +1,14 @@
+# ~/.continue/config.yaml — envseal MCP server (Continue — Tier B host)
+#
+# [VERIFY: recent Continue versions moved toward the new HUB config.yaml
+# schema; if your build does not accept a top-level `mcpServers` list, use
+# the legacy form instead:
+#   experimental:
+#     mcpServers:
+#       - ...same entry...
+# Check against your installed Continue version's documentation.]
+
+mcpServers:
+  - name: envseal-mcp
+    command: envseal-mcp
+    args: []

@@ -1,0 +1,94 @@
+#!/bin/sh
+# envseal pre-commit guard — refuse a commit that stages a `.env` file or a
+# secret-shaped string anywhere in the tree. Dependency-free: POSIX sh + grep + sed.
+#
+# Install (run from anywhere under the repository):
+#   install -m 0755 plugins/generic/pre-commit .git/hooks/pre-commit
+# or copy the file and `chmod +x .git/hooks/pre-commit`.
+#
+# This is an advisory guardrail (Tier B/C), not a cryptograptic boundary: it
+# catches the common accidents — a staged `.env`, a pasted key — not a determined
+# exfiltrator. Stronger posture is the `keychain` sink (PLAN 7.2), which keeps
+# `.env` as `secret-ref://` references so there is no plaintext to stage.
+
+set -u
+
+# Basenames that must never be committed. `env.schema.jsonc` is a declaration
+# artifact (no values) and is allowed; `.env.example` is the designated
+# placeholder home and is exempted below.
+ENV_BASENAME_RE='^\.env(\.[A-Za-z0-9_]+)?$'
+
+# Secret-shaped content patterns. A fast pre-commit filter, roughly in sync with
+# packages/detector/src/patterns.ts: provider prefixes + high-entropy bodies and
+# private keys. POSIX ERE only (no \d, no \w, no lookaround).
+SECRET_RE='(-----BEGIN (EC |RSA |OPENSSH |DSA |PGP )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|sk-[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{20,}|pk_live_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|SG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|dop_v1_[A-Za-z0-9_]{40,}|(postgres|postgresql|mysql|mongodb(\+srv)?|redis|amqp)://[^[:space:]\/:]+:[^@[:space:]]+@)'
+
+# Staged paths never scanned for content. Binary junk and lockfiles are the only
+# things here; the alternation reads as one `case` pattern list.
+BINARY_SKIP='*.lockb|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.ico|*.pdf|*.woff|*.woff2|*.wasm|*.jar'
+
+# Scratch file for violation lines. Written in a pipeline (a subshell), so
+# variables cannot carry out of the loop; the file does.
+tmp=$(mktemp) 2>/dev/null || tmp="${TMPDIR:-/tmp}/envseal-precommit.$$"
+if [ -z "$tmp" ] || ! : > "$tmp" 2>/dev/null; then
+    echo "envseal pre-commit: cannot create a temp file" >&2
+    exit 1
+fi
+trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+
+# ---------------------------------------------------------------------------
+staged=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null) || {
+    echo "envseal pre-commit: could not list staged files" >&2
+    exit 1
+}
+
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Blocked basenames: `.env` and `.env.*`, except `.env.example`.
+# ---------------------------------------------------------------------------
+printf '%s\n' "$staged" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    base=$(basename -- "$f")
+    case "$base" in
+        .env.example) continue ;;
+        .env|.env.*)
+            echo "  staged environment file: $f" >> "$tmp"
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# 2. Secret-shaped content in any staged text file.
+# ---------------------------------------------------------------------------
+printf '%s\n' "$staged" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in
+        $BINARY_SKIP) continue ;;
+        *.env.example) continue ;;
+    esac
+    if [ -f "$f" ] && grep -qI -E "$SECRET_RE" -- "$f"; then
+        echo "  secret-shaped content in: $f" >> "$tmp"
+    fi
+done
+
+# `grep -q` stops at the first match, so a huge staged file still returns fast;
+# `-I` skips binary files without a down-to-the-byte scan.
+
+# ---------------------------------------------------------------------------
+# Report.
+# ---------------------------------------------------------------------------
+if [ -s "$tmp" ]; then
+    echo "envseal pre-commit: refusing commit — staged files may contain secrets:" >&2
+    cat -- "$tmp" >&2
+    echo >&2
+    echo "  Unstage the file with 'git rm --cached <file>' and add it to"
+    echo "  .gitignore, or rotate the secret if it was ever committed."
+    echo "  If you are certain this is a false positive:" >&2
+    echo "      git commit --no-verify" >&2
+    exit 1
+fi
+
+exit 0

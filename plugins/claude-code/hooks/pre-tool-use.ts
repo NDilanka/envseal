@@ -135,7 +135,7 @@ export function stripAssignments(segment: string): string {
 export function headOf(segment: string): string {
   const stripped = stripAssignments(segment);
   const first = /^([^\s]+)/.exec(stripped);
-  return first === null ? '' : first[1];
+  return first?.[1] ?? '';
 }
 
 export function isSecretShapedPattern(pattern: string): boolean {

@@ -1,0 +1,32 @@
+{
+  "name": "envseal-vscode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "envseal `ide` prompter — VS Code input box surface for the SEP/1 secret elicitation broker.",
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "envseal.provideSecret",
+        "title": "envseal: Provide a secret to the broker"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "1.85.0",
+    "typescript": "^5.7.2"
+  }
+}

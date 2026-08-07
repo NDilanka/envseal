@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "envseal-mcp": {
+      "command": "envseal-mcp",
+      "args": []
+    }
+  }
+}

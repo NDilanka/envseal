@@ -1,0 +1,294 @@
+import * as node_http from 'node:http';
+import * as node_crypto from 'node:crypto';
+import * as node_fs from 'node:fs';
+import * as node_os from 'node:os';
+import * as node_path from 'node:path';
+import { findProjectRoot } from '@envseal/core';
+import { Broker } from '@envseal/core';
+import { dispatch } from '@envseal/sdk';
+import { INPUT_SCHEMAS, isSepError } from '@envseal/protocol';
+import { generateOpenAPI } from './openapi.js';
+
+export interface HttpServerOptions {
+  root: string;
+  port?: number;
+  token?: string;
+}
+
+interface StartResult {
+  url: string;
+  token: string;
+  close(): Promise<void>;
+}
+
+async function getOrCreateToken(token?: string): Promise<string> {
+  if (token) {
+    return token;
+  }
+
+  const tokenDir = node_path.join(node_os.homedir(), '.envseal');
+  const tokenFile = node_path.join(tokenDir, 'api-token');
+
+  // Create directory if needed
+  if (!node_fs.existsSync(tokenDir)) {
+    node_fs.mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+  }
+
+  // Check if token file exists
+  if (node_fs.existsSync(tokenFile)) {
+    const tokenBuf = node_fs.readFileSync(tokenFile);
+    return tokenBuf.toString('utf8').trim();
+  }
+
+  // Generate new token (32 random bytes as hex)
+  const randomBytes = node_crypto.randomBytes(32);
+  const newToken = randomBytes.toString('hex');
+
+  // Write with 0o600 permissions
+  node_fs.writeFileSync(tokenFile, newToken, { mode: 0o600 });
+
+  return newToken;
+}
+
+export async function startHttpServer(
+  opts: HttpServerOptions,
+): Promise<StartResult> {
+  const token = await getOrCreateToken(opts.token);
+  const broker = new Broker({ root: opts.root });
+
+  let server: node_http.Server | null = null;
+  let actualPort = 0;
+
+  const requestHandler = async (
+    req: node_http.IncomingMessage,
+    res: node_http.ServerResponse,
+  ): Promise<void> => {
+    // Common response headers
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/json');
+
+    // Enforce Host header (DNS rebinding defense)
+    const hostHeader = req.headers.host;
+    const expectedHost = `127.0.0.1:${actualPort}`;
+    if (hostHeader !== expectedHost) {
+      res.writeHead(400);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'INVALID_HOST',
+            userMessage: 'Invalid Host header',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Reject requests with Origin header (CORS defense)
+    if (req.headers.origin) {
+      res.writeHead(400);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'INVALID_ORIGIN',
+            userMessage: 'Origin header not allowed',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Handle GET /openapi.json
+    if (req.method === 'GET' && req.url === '/openapi.json') {
+      const openapi = generateOpenAPI(actualPort);
+      res.writeHead(200);
+      res.end(JSON.stringify(openapi));
+      return;
+    }
+
+    // All other routes require POST and Bearer token auth
+    if (req.method !== 'POST') {
+      res.writeHead(405);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'METHOD_NOT_ALLOWED',
+            userMessage: 'Method not allowed',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Check Authorization header
+    const authHeader = req.headers.authorization ?? '';
+    const bearerPrefix = 'Bearer ';
+
+    if (!authHeader.startsWith(bearerPrefix)) {
+      res.writeHead(401);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'UNAUTHORIZED',
+            userMessage: 'Missing or invalid authorization',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    const providedToken = authHeader.slice(bearerPrefix.length);
+
+    // Use timing-safe comparison
+    const expectedTokenBuf = Buffer.from(token, 'utf8');
+    const providedTokenBuf = Buffer.from(providedToken, 'utf8');
+
+    let tokensMatch = false;
+    try {
+      tokensMatch =
+        expectedTokenBuf.length === providedTokenBuf.length &&
+        node_crypto.timingSafeEqual(expectedTokenBuf, providedTokenBuf);
+    } catch {
+      tokensMatch = false;
+    }
+
+    if (!tokensMatch) {
+      res.writeHead(401);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'UNAUTHORIZED',
+            userMessage: 'Invalid token',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Parse URL to get operation name
+    const urlPath = req.url ?? '/';
+    const match = urlPath.match(/^\/v1\/([a-z_]+)$/);
+
+    if (!match || !match[1]) {
+      res.writeHead(404);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'NOT_FOUND',
+            userMessage: 'Endpoint not found',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    const operationName = match[1];
+
+    // Read and validate body
+    const chunks: Buffer[] = [];
+    let bodySize = 0;
+    const MAX_BODY_SIZE = 1024 * 1024; // 1 MiB
+
+    for await (const chunk of req) {
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY_SIZE) {
+        res.writeHead(413);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'PAYLOAD_TOO_LARGE',
+              userMessage: 'Request body too large',
+              retriable: false,
+            },
+          }),
+        );
+        return;
+      }
+      chunks.push(chunk);
+    }
+
+    let body: unknown;
+    try {
+      const bodyText = Buffer.concat(chunks).toString('utf8');
+      body = bodyText ? JSON.parse(bodyText) : {};
+    } catch {
+      res.writeHead(400);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'INVALID_JSON',
+            userMessage: 'Invalid JSON in request body',
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Dispatch to SDK
+    try {
+      const result = await dispatch(broker, operationName, body);
+      res.writeHead(200);
+      res.end(JSON.stringify(result));
+    } catch (error) {
+      res.writeHead(500);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'INTERNAL_ERROR',
+            userMessage: 'An error occurred',
+            retriable: false,
+          },
+        }),
+      );
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    server = node_http.createServer(requestHandler);
+
+    server.listen(opts.port ?? 0, '127.0.0.1', () => {
+      if (!server) {
+        reject(new Error('Server not created'));
+        return;
+      }
+
+      const addr = server.address();
+      if (!addr || typeof addr === 'string') {
+        reject(new Error('Could not get server address'));
+        return;
+      }
+
+      actualPort = addr.port;
+      const url = `http://127.0.0.1:${actualPort}`;
+
+      resolve({
+        url,
+        token,
+        close: async (): Promise<void> => {
+          return new Promise((closeResolve, closeReject) => {
+            if (!server) {
+              closeResolve();
+              return;
+            }
+            server.close((err) => {
+              if (err) {
+                closeReject(err);
+              } else {
+                closeResolve();
+              }
+            });
+          });
+        },
+      });
+    });
+
+    server.on('error', reject);
+  });
+}

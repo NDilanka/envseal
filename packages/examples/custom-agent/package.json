@@ -1,0 +1,16 @@
+{
+  "name": "@envseal/example-custom-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@envseal/sdk": "workspace:*",
+    "@envseal/core": "workspace:*",
+    "@envseal/protocol": "workspace:*",
+    "@envseal/prompters": "workspace:*"
+  }
+}

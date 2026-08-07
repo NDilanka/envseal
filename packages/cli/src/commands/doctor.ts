@@ -1,0 +1,79 @@
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { emit, fail } from '../output.js';
+import { EXIT } from '../exit-codes.js';
+import { detectHost } from '../host.js';
+import { createBroker } from '../cli-utils.js';
+
+export async function doctor(root: string, json: boolean): Promise<void> {
+  try {
+    const broker = await createBroker(root);
+    const status = await broker.describe();
+
+    const gitignorePath = join(root, '.gitignore');
+    const envPath = join(root, '.env');
+
+    // Check gitignore
+    let gitignoreCovers = false;
+    if (existsSync(gitignorePath)) {
+      const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
+      gitignoreCovers = gitignoreContent.includes('.env');
+    }
+
+    // Check .env permissions
+    let envFileOk = false;
+    if (existsSync(envPath)) {
+      const stats = statSync(envPath);
+      envFileOk = (stats.mode & 0o077) === 0;
+    }
+
+    const host = detectHost(root);
+
+    const output = {
+      projectRoot: root,
+      manifestPath: status.manifestPath,
+      host: {
+        id: host.id,
+        name: host.name,
+        tier: host.tier,
+        reason: host.reason,
+        recommendation: host.recommendation,
+      },
+      gitignore: {
+        exists: existsSync(gitignorePath),
+        covers: gitignoreCovers,
+      },
+      envFile: {
+        exists: existsSync(envPath),
+        isTracked: false,
+        permissionsOk: envFileOk,
+      },
+      missingRequiredCount: status.missingRequired.length,
+      missingRequired: status.missingRequired,
+    };
+
+    if (!json) {
+      console.log(`Project root: ${root}`);
+      console.log(`Host: ${host.name} (Tier ${host.tier})`);
+      console.log(`  ${host.reason}`);
+      console.log(`  ${host.recommendation}`);
+      console.log(`Gitignore covers .env: ${gitignoreCovers ? 'yes' : 'no'}`);
+      console.log(`Missing required keys: ${status.missingRequired.length}`);
+      if (status.missingRequired.length > 0) {
+        for (const key of status.missingRequired) {
+          console.log(`  - ${key}`);
+        }
+      }
+    } else {
+      emit(json, '', output);
+    }
+
+    // Exit with UNSATISFIED if required keys are missing
+    if (status.missingRequired.length > 0) {
+      process.exit(EXIT.UNSATISFIED);
+    }
+  } catch (error) {
+    fail(json, error);
+  }
+}

@@ -84,6 +84,16 @@ importers:
       '@envseal/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@envseal/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      zod-to-json-schema:
+        specifier: ^3.24.1
+        version: 3.25.2(zod@3.25.76)
+    devDependencies:
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/mcp-server:
     dependencies:
@@ -156,6 +166,41 @@ importers:
       '@envseal/registry':
         specifier: workspace:*
         version: link:../registry
+      zod-to-json-schema:
+        specifier: ^3.24.1
+        version: 3.25.2(zod@3.25.76)
+    devDependencies:
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  plugins/claude-code:
+    dependencies:
+      '@envseal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@envseal/detector':
+        specifier: workspace:*
+        version: link:../../packages/detector
+      '@envseal/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      esbuild:
+        specifier: latest
+        version: 0.28.1
+      tsx:
+        specifier: latest
+        version: 4.23.8
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
 packages:
 

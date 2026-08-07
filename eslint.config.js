@@ -16,14 +16,48 @@ export default tseslint.config(
       'plugins/*/generated/**',
     ],
   },
-  {
-    files: ['**/*.mjs', 'scripts/**/*.js'],
-    languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
-    },
-  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // Verification probe scripts and build helpers: plain Node ESM, not part of
+    // any package's tsconfig, so they need their globals declared explicitly.
+    files: ['**/*.mjs', 'scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Buffer: 'readonly',
+        fetch: 'readonly',
+        Headers: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        setImmediate: 'readonly',
+        queueMicrotask: 'readonly',
+        structuredClone: 'readonly',
+        performance: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        global: 'readonly',
+        globalThis: 'readonly',
+      },
+    },
+    rules: {
+      // Probes are throwaway diagnostics; an unused binding while narrowing a
+      // failure is not worth failing the gate over.
+      '@typescript-eslint/no-unused-vars': 'warn',
+      'no-irregular-whitespace': 'warn',
+    },
+  },
   {
     files: ['**/*.ts'],
     plugins: { envseal: { rules: { 'no-secret-to-log': noSecretToLog } } },

@@ -49,7 +49,7 @@ describe('dotenv', () => {
     });
 
     it('detects BOM', () => {
-      const text = '﻿KEY=value\n';
+      const text = '\uFEFFKEY=value\n';
       const parsed = parseDotenv(text);
       expect(parsed.bom).toBe(true);
       expect(parsed.lines[0]?.kind).toBe('assignment');
@@ -99,7 +99,7 @@ describe('dotenv', () => {
     });
 
     it('preserves BOM', () => {
-      const text = '﻿KEY=value\n';
+      const text = '\uFEFFKEY=value\n';
       const parsed = parseDotenv(text);
       const serialized = serializeDotenv(parsed);
       expect(serialized.charCodeAt(0)).toBe(0xfeff);
@@ -258,7 +258,7 @@ describe('dotenv', () => {
         .tuple(fc.array(lineArb, { minLength: 0, maxLength: 10 }), eolArb, fc.boolean())
         .map(([lines, eol, hasBom]) => {
           const body = lines.join(eol) + (lines.length > 0 ? eol : '');
-          return hasBom ? '﻿' + body : body;
+          return hasBom ? '\uFEFF' + body : body;
         });
 
       fc.assert(
@@ -293,7 +293,9 @@ describe('dotenv', () => {
             // Without this the oracle fails to locate the target assignment on
             // line 0 of a BOM file, marks it "must be unchanged", and the test
             // fails on a correct surgical write — roughly 1 run in 16.
-            const assignmentRegex = /^﻿?(?:export\s+)?([A-Z][A-Z0-9_]*)=/;
+            // editor and trips no-irregular-whitespace. Stripping it matters — the
+            // oracle previously failed a correct surgical write on BOM'd files.
+            const assignmentRegex = /^\uFEFF?(?:export\s+)?([A-Z][A-Z0-9_]*)=/;
             const originalAssignIdx = originalLines.findIndex((line) => {
               const match = assignmentRegex.exec(line);
               return match?.[1] === key;

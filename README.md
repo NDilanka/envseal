@@ -27,7 +27,7 @@ The protocol splits the problem into four principals, each with a specific trust
                               │  ✗ never carries a secret value
 ┌─────────────────────────────┴────────────────────────────────────────────┐
 │  HARNESS  (Claude Code / Codex / Cursor / Zed / Cline)                    │
-│    + hooks:  PreToolUse guard · UserPromptSubmit redactor · statusline    │
+│    + hooks (Claude Code only):  PreToolUse guard · prompt redactor        │
 └─────────────────────────────┬────────────────────────────────────────────┘
                               │  spawns (stdio)  /  connects (http+sse)
 ┌─────────────────────────────┴────────────────────────────────────────────┐
@@ -68,6 +68,12 @@ The agent's verbs are strictly declarative:
 
 The model never constructs a value, never reads one back, and cannot receive one. Safety is structural, not policed.
 
+> The hooks row applies to **Claude Code only**. Every other host gets the
+> protocol (the model still cannot see a value), but nothing intercepts a shell
+> command that reads `.env`. `envseal doctor` reports the real tier for your
+> host — and reports tier B, not A, when the Claude Code plugin is not actually
+> installed.
+
 ## Install
 
 Not yet published to npm. Build from source:
@@ -102,7 +108,7 @@ Tier 4 makes the claim "works with any agent" true rather than aspirational: an 
 
 envseal offers different levels of protection depending on your host. `envseal doctor` reports which tier you have:
 
-- **Tier A** — Full protocol + interception hooks (Claude Code). Model tool calls and user messages are pre-filtered to prevent accidental exfiltration. **Recommended.**
+- **Tier A** — Full protocol + interception hooks. Claude Code **with the envseal plugin installed**. Model tool calls and user messages are pre-filtered to prevent accidental exfiltration. **Recommended.** Running under Claude Code without the plugin reports tier B, not A — `doctor` checks for the hook wiring rather than assuming it.
 - **Tier B** — Protocol + advisory guardrails (rules files, pre-commit hooks, Continue contexts). Leak-through-shell is possible; recommend the `keychain` sink so `.env` holds only references.
 - **Tier C** — Protocol only. Same recommendation, stated more plainly.
 

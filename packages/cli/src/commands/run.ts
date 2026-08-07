@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { createBroker } from '../cli-utils.js';
 
@@ -20,7 +21,17 @@ async function confirmInteractive(info: {
   networkEgress: boolean;
 }): Promise<boolean> {
   if (process.env.ENVSEAL_ASSUME_YES === '1') return true;
-  if (!process.stdin.isTTY) return false;
+  if (!process.stdin.isTTY) {
+    // Distinct from a refusal. Reporting "the user denied the confirmation" when
+    // no human was ever asked is actively misleading, and it is the shell-only
+    // agents of Tier 4 that hit this path — the ones this binding exists for.
+    throw new SepError({
+      code: 'SEP_NO_INTERACTIVE_SURFACE',
+      userMessage:
+        'envseal run needs confirmation before injecting secrets, but there is no terminal to ask on. ' +
+        'Re-run in an interactive shell, or pass --yes (or set ENVSEAL_ASSUME_YES=1) to approve non-interactively.',
+    });
+  }
 
   const lines = [
     '',

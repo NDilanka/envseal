@@ -23,14 +23,18 @@ describe('host detection', () => {
     vi.unstubAllEnvs();
   });
 
-  it('detects Claude Code (Tier A) by .claude directory', () => {
+  it('reports Claude Code at Tier B when the plugin is not installed', () => {
     const claudeDir = join(tempDir, '.claude');
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(claudeDir, 'test'), '');
 
     const host = detectHost(tempDir);
     expect(host.id).toBe('claude-code');
-    expect(host.tier).toBe('A');
+    // Tier A is earned by the hooks actually being wired, not by the harness
+    // being present. Claiming otherwise tells the user a shell read of the
+    // dotenv file is blocked when nothing is blocking it.
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/hooks were not found/i);
   });
 
   it('detects Cursor (Tier B) by .cursor directory', () => {
@@ -75,6 +79,20 @@ describe('host detection', () => {
     expect(host.tier).toBe('C');
   });
 
+  it('reports Tier A only when envseal hooks are wired into settings', () => {
+    const claudeDir = join(tempDir, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ hooks: { PreToolUse: [{ command: 'node envseal/hooks/pre-tool-use.cjs' }] } }),
+    );
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('claude-code');
+    expect(host.tier).toBe('A');
+    expect(host.recommendation).toMatch(/blocked/i);
+  });
+
   it('prioritizes Claude Code over other hosts', () => {
     const claudeDir = join(tempDir, '.claude');
     mkdirSync(claudeDir, { recursive: true });
@@ -88,7 +106,7 @@ describe('host detection', () => {
 
     const host = detectHost(tempDir);
     expect(host.id).toBe('claude-code');
-    expect(host.tier).toBe('A');
+    expect(host.tier).toBe('B');
   });
 
   it('includes protection tier recommendation', () => {

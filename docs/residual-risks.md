@@ -113,7 +113,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 
 ## 5. Browser extensions can read the loopback prompter page
 
-**The risk:** The `loopback-browser` prompter opens an HTTPS page at `127.0.0.1:<port>` with a password input field. A browser extension with permission to read DOM can:
+**The risk:** The `loopback-browser` prompter opens a plain **HTTP** page at `127.0.0.1:<port>` with a password input field. (Plain HTTP is deliberate: TLS to a loopback address requires either a self-signed certificate the browser will warn about or a shipped private key, and it protects nothing — the traffic never leaves the machine. The exposure below comes from anything already running inside the browser, which TLS would not stop.) A browser extension with permission to read DOM can:
 - Read the page structure and the input field's value
 - Intercept network requests to the local server
 - Inject script to capture keystrokes

@@ -371,3 +371,16 @@ The CLI is tested with a shell-only end-to-end test (`test/shell-e2e.test.ts`) t
 4. **Asserts the sentinel value never appears in any stdout/stderr**, proving the flow is leak-free.
 
 This is the Tier-4 integration gate: proof that an agent with only shell command access can safely provision secrets without ever seeing them.
+
+
+## `run` confirmation
+
+`envseal run` injects secrets into a child process, so it asks for confirmation first.
+
+| Situation | Behaviour |
+|---|---|
+| Interactive terminal | Prompts `Continue? [y/N]`, showing the command, the keys, and a warning when the command can make network requests |
+| No terminal, no `--yes` | Exits `4` (`SEP_NO_INTERACTIVE_SURFACE`) explaining that confirmation is impossible here — it does **not** report a refusal the user never made |
+| `--yes` or `ENVSEAL_ASSUME_YES=1` | Proceeds without prompting. Intended for CI and shell-only agents that have already established trust in the command |
+
+Child `stdout`/`stderr` are passed through the redactor either way, so an injected value cannot appear in what the caller reads back.

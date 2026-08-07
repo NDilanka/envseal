@@ -17,7 +17,7 @@ import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters
  */
 export function createStubPrompter(value: string): Prompter {
   return {
-    id: 'none',
+    id: 'ide',
     available: async () => true,
     prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
       ticket: req.ticket,

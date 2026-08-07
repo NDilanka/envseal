@@ -29,18 +29,49 @@ function detectFormat(text: string): FormattingOptions {
 
 const MANIFEST_FIELDS = ['$schema', 'version', 'entries'] as const;
 
+/**
+ * Load the manifest, or null when there is no manifest file.
+ *
+ * "Absent" and "unreadable" are different answers and must not share a return
+ * value. Collapsing them meant a truncated or schema-invalid manifest read as
+ * an empty one, and the next `env_declare` cheerfully wrote a fresh file over
+ * it — silently discarding every prior declaration while the corrupting field
+ * remained, so the cycle repeated. A corrupt manifest now throws; callers that
+ * genuinely tolerate absence still get null.
+ */
 export function loadManifest(paths: ProjectPaths): ManifestType | null {
   const text = readFileIfPresent(paths.manifest);
   if (text === null) return null;
+
   const errors: ParseError[] = [];
   const value: unknown = jsonc.parse(text, errors, {
     disallowComments: false,
     allowTrailingComma: false,
     allowEmptyContent: false,
   });
-  if (errors.length > 0) return null;
+  if (errors.length > 0) {
+    throw new SepError({
+      code: 'SEP_FORMAT_INVALID',
+      userMessage:
+        `${paths.manifest} is not valid JSONC and was not overwritten. ` +
+        'Fix the syntax, or delete the file to start a fresh manifest.',
+    });
+  }
+
   const result = Manifest.safeParse(value);
-  return result.success ? result.data : null;
+  if (!result.success) {
+    const detail = result.error.issues
+      .slice(0, 3)
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ');
+    throw new SepError({
+      code: 'SEP_FORMAT_INVALID',
+      userMessage:
+        `${paths.manifest} does not match the manifest schema and was not overwritten (${detail}). ` +
+        'Fix the file, or delete it to start a fresh manifest.',
+    });
+  }
+  return result.data;
 }
 
 function renderFreshManifest(manifest: ManifestType): string {

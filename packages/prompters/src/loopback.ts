@@ -382,11 +382,32 @@ async function serveRequest(
 ): Promise<void> {
   const secHeaders = securityHeaders(styleNonce, scriptNonce);
 
-  if (incoming.headers.origin !== undefined) {
+  if (incoming.headers.host !== expectedHost) {
     respondText(outgoing, 400, 'Bad Request', secHeaders);
     return;
   }
-  if (incoming.headers.host !== expectedHost) {
+
+  // Origin must not CONTRADICT us; requiring its absence broke the real browser.
+  //
+  // Two facts, both learned by driving Chrome at this server rather than a test
+  // client:
+  //   1. Browsers send `Origin` on every POST, including same-origin ones.
+  //   2. Because this page sets `Referrer-Policy: no-referrer`, the browser
+  //      sends `Origin: null` rather than the page's actual origin.
+  // The original rule ("any Origin header -> 400") therefore rejected the one
+  // submission this entire surface exists to accept. Every unit test passed
+  // because the HTTP client used in tests sends no Origin at all.
+  //
+  // Accepting only {absent, exact match, null} still refuses a genuine
+  // cross-origin post, which would carry that other origin verbatim and cannot
+  // forge this header. `null` is not a meaningful weakening: an attacker who
+  // could induce it would still need the 128-bit path nonce and the ticket-bound
+  // CSRF token, neither of which is readable cross-origin. Origin is
+  // defence-in-depth here, not the primary control.
+  const origin = incoming.headers.origin;
+  const originOk =
+    origin === undefined || origin === `http://${expectedHost}` || origin === 'null';
+  if (!originOk) {
     respondText(outgoing, 400, 'Bad Request', secHeaders);
     return;
   }

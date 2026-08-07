@@ -10,7 +10,7 @@ const root = mkdtempSync(join(tmpdir(), 'envseal-probe-'));
 writeFileSync(join(root, '.gitignore'), '.env\n', 'utf8');
 
 const stub = {
-  id: 'none',
+  id: 'ide',
   available: async () => true,
   prompt: async (req) => ({
     ticket: req.ticket,

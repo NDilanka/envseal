@@ -176,7 +176,7 @@ describe('loopback-browser prompter', () => {
     await expectPortClosed(Number(result.url.port), 1000);
   });
 
-  it('rejects any Origin header with 400', async () => {
+  it('rejects a cross-origin Origin header with 400', async () => {
     const result = await startPrompt(new LoopbackPrompter());
     try {
       const res = await request(result.url.href, { headers: { origin: 'https://evil.local' } });
@@ -187,6 +187,52 @@ describe('loopback-browser prompter', () => {
     }
     await result.result;
     await expectPortClosed(Number(result.url.port), 1000);
+  });
+
+  // Regression guard for manual gate M1. Browsers send `Origin` on every POST,
+  // including same-origin ones, so a rule of "reject any request carrying
+  // Origin" rejects the exact submission this surface exists to accept. undici
+  // omits the header, which is why the suite above stayed green while the real
+  // browser flow was broken — so this test sets it explicitly.
+  it('accepts the same-origin Origin header a browser actually sends', async () => {
+    const result = await startPrompt(new LoopbackPrompter());
+    const origin = result.url.origin;
+    try {
+      const res = await request(result.url.href, { headers: { origin } });
+      expect(res.statusCode).toBe(200);
+      expect(await res.body.text()).toContain('<form method="post"');
+    } finally {
+      await toCleanup?.prompter.cancel(toCleanup.ticket);
+    }
+    await result.result;
+    await expectPortClosed(Number(result.url.port), 1000);
+  });
+
+  it('stores a submitted value when the POST carries the browser Origin', async () => {
+    const prompter = new LoopbackPrompter();
+    const result = await startPrompt(prompter);
+    const origin = result.url.origin;
+    const html = await fetchPage(result.url);
+    const csrf = parseCsrf(html);
+
+    const res = await request(result.url.href, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin,
+      },
+      body: new URLSearchParams({
+        csrf,
+        'env_value.OPENAI_API_KEY': 'sk-same-origin-submit',
+      }).toString(),
+    });
+    expect(res.statusCode).toBe(200);
+
+    const outcome = await result.result;
+    const entry = outcome.results.find((r) => r.key === 'OPENAI_API_KEY');
+    expect(entry?.outcome).toBe('entered');
+    expect(entry?.value?.toString('utf8')).toBe('sk-same-origin-submit');
+    toCleanup = null;
   });
 
   it('serves the form with the display nonce and an escaped reason', async () => {

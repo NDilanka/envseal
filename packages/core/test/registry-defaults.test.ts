@@ -20,7 +20,7 @@ import type { Prompter } from '@envseal/prompters';
  */
 
 const noopPrompter: Prompter = {
-  id: 'none',
+  id: 'ide',
   available: async () => true,
   prompt: async (req) => ({
     ticket: req.ticket,

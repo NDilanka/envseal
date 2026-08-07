@@ -18,7 +18,7 @@ import type {
   DeclareResult,
   KeyStatus,
 } from '@envseal/protocol';
-import { SepError, asSecret, zero } from '@envseal/protocol';
+import { SepError, isSepError, asSecret, zero } from '@envseal/protocol';
 import { getProvider, findKey } from '@envseal/registry';
 import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
@@ -33,6 +33,7 @@ import type { VerifyOptions } from './verify.js';
 import { runWithSecrets } from './exec.js';
 import type { ExecOptions } from './exec.js';
 import { getSink } from './sinks/registry.js';
+import { getValidation, recordValidation } from './validation-state.js';
 
 const LENGTH_BUCKETS = ['<8', '8-16', '16-32', '32-48', '48-64', '64-128', '128+'] as const;
 
@@ -102,15 +103,29 @@ export class Broker {
       const present = presenceInfo?.present ?? false;
       const value = presenceInfo?.value ?? null;
 
-      let formatValid = true;
-      if (present && value && entry.format?.pattern) {
-        const pattern = new RegExp(entry.format.pattern);
-        const valueStr = value.toString('utf8');
-        formatValid = pattern.test(valueStr);
-      }
-
       const lengthBucket = value ? getLengthBucket(value.length) : '<8';
       const fingerprint = value ? computeFingerprint(value, this.salt) : 'unknown';
+
+      // NEVER evaluate the manifest's format.pattern against the live value
+      // here. That pattern is model-supplied via env_declare, so compiling it
+      // against the secret and returning the boolean is an unlimited
+      // chosen-predicate oracle — enough to reconstruct the value in a few
+      // hundred calls. See validation-state.ts.
+      //
+      // Report the outcome recorded when the value was stored. If we have no
+      // record for THIS value (e.g. it predates envseal, or was written by
+      // hand), fall back to the registry's pattern, which is bundled data the
+      // model cannot influence — and otherwise report unknown.
+      let formatValid: boolean | null = null;
+      if (present && value) {
+        formatValid = getValidation(this.paths, entry.key, fingerprint);
+        if (formatValid === null) {
+          const trusted = findKey(entry.key)?.key.format?.pattern;
+          if (trusted !== undefined) {
+            formatValid = new RegExp(trusted).test(value.toString('utf8'));
+          }
+        }
+      }
 
       const status: KeyStatus = {
         key: entry.key,
@@ -194,7 +209,22 @@ export class Broker {
     // the caller a browser window had opened even when the resolved prompter was
     // `none` (CI) or a native dialog — so the model relayed instructions to the
     // user for a prompt that did not exist.
-    const surface = (await this.getPrompter()).id;
+    const prompter = await this.getPrompter();
+    const surface = prompter.id;
+
+    // Refuse before minting a ticket when there is no way to ask a human.
+    // Previously the `none` prompter threw inside startPrompt(), where a
+    // catch-all turned it into `cancelled` — so in CI the model was told the
+    // USER had declined, and the documented exit code 4 was unreachable.
+    if (surface === 'none') {
+      throw new SepError({
+        code: 'SEP_NO_INTERACTIVE_SURFACE',
+        userMessage:
+          `No interactive surface is available to collect ${input.keys.join(', ')}. ` +
+          'Provide these values out of band (CI secret store, keychain, or a pre-populated .env), ' +
+          'or run in an environment with a browser or terminal.',
+      });
+    }
 
     const ticket = this.ticketStore.create({
       keys: input.keys,
@@ -221,12 +251,12 @@ export class Broker {
       // typo in a surface name until it reached a client.
       surface: ticket.surface as Ticket['surface'],
       expiresAt: new Date(ticket.expiresAt).toISOString(),
+      // No 'none' branch: request() throws SEP_NO_INTERACTIVE_SURFACE before
+      // reaching here, so a ticket always corresponds to a real prompt.
       userMessage:
         surface === 'loopback-browser'
           ? `A browser window has opened to collect ${input.keys.join(', ')}. Verify it shows code ${ticket.nonce} before typing anything.`
-          : surface === 'none'
-            ? `No interactive surface is available; ${input.keys.join(', ')} must be provided out of band.`
-            : `A prompt has opened to collect ${input.keys.join(', ')}. Verify it shows code ${ticket.nonce}.`,
+          : `A prompt has opened to collect ${input.keys.join(', ')}. Verify it shows code ${ticket.nonce}.`,
     };
   }
 
@@ -293,6 +323,11 @@ export class Broker {
           await sink.write(this.paths, result.key, result.value);
 
           const fingerprint = computeFingerprint(result.value, this.salt);
+          // Record the outcome now, while we legitimately hold the value. This
+          // is the only place format validation touches a secret; env_describe
+          // afterwards reports THIS result rather than re-testing a pattern the
+          // model may have changed in the meantime.
+          recordValidation(this.paths, result.key, fingerprint, true);
           this.ticketStore.setOutcome(ticketId, result.key, 'stored');
           appendAudit(this.paths, {
             type: 'stored',
@@ -329,6 +364,14 @@ export class Broker {
 
       this.ticketStore.resolve(ticketId);
     } catch (error) {
+      // The prompt surface failed rather than the user declining. Record why,
+      // so the distinction survives into the audit log even though the ticket
+      // state cannot express it.
+      appendAudit(this.paths, {
+        type: 'blocked',
+        reason: 'prompt_failed',
+        detail: isSepError(error) ? error.code : 'unknown_prompter_error',
+      });
       this.ticketStore.cancel(ticketId);
     }
   }

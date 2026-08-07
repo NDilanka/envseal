@@ -6,12 +6,10 @@ import { SEP_TOOL_NAMES } from '@envseal/protocol';
 
 describe('dialects', () => {
   beforeAll(() => {
-    // Generate dialects
-    try {
-      execSync('pnpm gen:dialects', { cwd: process.cwd() });
-    } catch (error) {
-      console.error('Failed to generate dialects:', error);
-    }
+    // Must not be swallowed. A caught-and-logged failure here leaves every
+    // assertion below validating the stale committed JSON instead of freshly
+    // generated output — the generator could be entirely broken and green.
+    execSync('pnpm gen:dialects', { cwd: process.cwd() });
   });
 
   const dialects = [
@@ -76,9 +74,13 @@ describe('dialects', () => {
         // Check required fields
         for (const tool of tools as Record<string, unknown>[]) {
           for (const field of dialect.requiredFields || []) {
-            if (field === 'function') {
+            if (field === 'type') {
+              // Previously skipped by an `else if (field !== 'type')`, so every
+              // tool could drop the OpenAI discriminator without a red test.
+              expect(tool.type, 'Tool should have type "function"').toBe('function');
+            } else if (field === 'function') {
               expect(tool).toHaveProperty(field);
-            } else if (field !== 'type') {
+            } else {
               expect(
                 tool[field] || (tool.function as Record<string, unknown>)?.[field],
                 `Tool should have ${field}`
@@ -100,12 +102,10 @@ describe('dialects', () => {
       const content1 = readFileSync(path, 'utf-8');
       const data1 = JSON.parse(content1);
 
-      // Regenerate
-      try {
-        execSync('pnpm gen:dialects', { cwd: process.cwd() });
-      } catch (error) {
-        console.error('Failed to regenerate dialects:', error);
-      }
+      // Must not be swallowed: if regeneration silently fails, `content2` is a
+      // re-read of the untouched file and the comparison below compares the
+      // file to itself, which cannot fail.
+      execSync('pnpm gen:dialects', { cwd: process.cwd() });
 
       const content2 = readFileSync(path, 'utf-8');
       const data2 = JSON.parse(content2);

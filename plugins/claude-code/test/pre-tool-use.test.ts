@@ -336,16 +336,17 @@ describe('pre-tool-use hook', () => {
           testCase as Parameters<typeof decide>[0],
           { declaredSecrets: ['OPENAI_API_KEY'] }
         );
-        if (!decision.allow) {
-          expect(decision.reason).toBeDefined();
-          const reason = decision.reason ?? '';
-          const hasAlternative =
-            reason.includes('env_describe') ||
-            reason.includes('env_verify') ||
-            reason.includes('env:') ||
-            reason.includes('env_request');
-          expect(hasAlternative).toBe(true);
-        }
+        // Unconditional: guarding this behind `if (!decision.allow)` would make
+        // the test vanish on exactly the regression it exists to catch — a
+        // `decide` that started allowing `.env` would pass with zero assertions.
+        expect(decision.allow).toBe(false);
+        const reason = decision.reason ?? '';
+        const hasAlternative =
+          reason.includes('env_describe') ||
+          reason.includes('env_verify') ||
+          reason.includes('env:') ||
+          reason.includes('env_request');
+        expect(hasAlternative).toBe(true);
       });
     }
   });

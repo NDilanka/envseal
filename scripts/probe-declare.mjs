@@ -9,7 +9,7 @@ import { Broker } from '../packages/core/dist/index.js';
 const root = mkdtempSync(join(tmpdir(), 'envseal-declare-'));
 writeFileSync(join(root, '.gitignore'), '.env\n', 'utf8');
 
-const broker = new Broker({ root, prompter: { id: 'none', available: async () => true, prompt: async () => ({ ticket: '', results: [] }), cancel: async () => {} } });
+const broker = new Broker({ root, prompter: { id: 'ide', available: async () => true, prompt: async () => ({ ticket: '', results: [] }), cancel: async () => {} } });
 
 await broker.declare({
   entries: [{ key: 'OPENAI_API_KEY', description: 'used by the client', required: true, secret: true }],

@@ -76,7 +76,11 @@ export const KeyStatus = z
     declared: z.boolean(),
     present: z.boolean(),
     sink: z.string(),
-    formatValid: z.boolean(),
+    // Nullable because "we have not validated THIS value" is a real state and
+  // must not be reported as true. env_describe deliberately does not
+  // re-evaluate a model-supplied format.pattern against a stored secret —
+  // doing so is a chosen-predicate oracle over the value.
+  formatValid: z.boolean().nullable(),
     lengthBucket: z.string(),
     fingerprint: z.string(),
     lastVerified: z.string().nullable(),

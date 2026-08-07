@@ -256,10 +256,15 @@ describe('user-prompt-submit hook', () => {
     it('errs toward redaction (fail-closed)', () => {
       // If there's doubt, the hook should redact
       // This is the design principle for false positives
-      const msg = 'Something with potential entropy that might look like a secret';
+      // A realistic high-entropy blob. `toBeDefined()` on a non-optional string
+      // is true by construction: the previous assertion held however badly the
+      // hook behaved, so "fail-closed" was asserted in name only.
+      const blob = 'aG9tZS9ydW5uZXIvd29yay9zZWNyZXQtdmFsdWUtZm9yLXRlc3Rpbmc';
+      const msg = `Something with potential entropy: ${blob}`;
       const result = redactUserMessage(msg);
-      // Result should be defined regardless
-      expect(result.modifiedMessage).toBeDefined();
+      expect(result.detected).toBe(true);
+      expect(result.modifiedMessage).not.toContain(blob);
+      expect(result.modifiedMessage).toMatch(/«redacted(-secret|:[^»]+)»/);
     });
   });
 
@@ -267,10 +272,13 @@ describe('user-prompt-submit hook', () => {
     it('never includes original secret value in notice', () => {
       const msg = 'Secret: sk-proj-this-is-secret-never-print-this';
       const result = redactUserMessage(msg);
-      if (result.notice) {
-        expect(result.notice).not.toContain('this-is-secret');
-        expect(result.notice).not.toContain('never-print');
-      }
+      // Unconditional: `if (result.notice)` would delete both assertions on
+      // exactly the regression they guard — a detector that stopped firing
+      // produces no notice and the leak check silently disappears.
+      expect(result.detected).toBe(true);
+      expect(result.notice).toBeTruthy();
+      expect(result.notice).not.toContain('this-is-secret');
+      expect(result.notice).not.toContain('never-print');
     });
 
     it('notice is safe to print to stderr', () => {

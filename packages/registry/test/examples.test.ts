@@ -18,6 +18,9 @@ describe('Provider examples', () => {
       const content = readFileSync(filePath, 'utf-8');
       const data = JSON.parse(content) as unknown;
       const result = ProviderSchema.safeParse(data);
+      // Without this, a parse failure skips the body and leaves `failures`
+      // empty, so the assertion below passes on the very regression it guards.
+      expect(result.success, `${file} failed to parse`).toBe(true);
 
       if (result.success) {
         for (const key of result.data.keys) {
@@ -47,6 +50,9 @@ describe('Provider examples', () => {
       const content = readFileSync(filePath, 'utf-8');
       const data = JSON.parse(content) as unknown;
       const result = ProviderSchema.safeParse(data);
+      // Without this, a parse failure skips the body and leaves `failures`
+      // empty, so the assertion below passes on the very regression it guards.
+      expect(result.success, `${file} failed to parse`).toBe(true);
 
       if (result.success) {
         for (const key of result.data.keys) {

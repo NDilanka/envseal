@@ -64,6 +64,7 @@ describe('dotenv', () => {
     it('handles quoted values', () => {
       const parsed = parseDotenv('KEY="quoted value"\n');
       const line = parsed.lines[0];
+      expect(line?.kind).toBe('assignment');
       if (line?.kind === 'assignment') {
         expect(line.value).toBe('quoted value');
         expect(line.quote).toBe('"');
@@ -73,6 +74,7 @@ describe('dotenv', () => {
     it('handles escaped quotes in double-quoted values', () => {
       const parsed = parseDotenv('KEY="value\\"with\\"quotes"\n');
       const line = parsed.lines[0];
+      expect(line?.kind).toBe('assignment');
       if (line?.kind === 'assignment') {
         expect(line.value).toContain('"');
       }
@@ -81,6 +83,7 @@ describe('dotenv', () => {
     it('handles export prefix', () => {
       const parsed = parseDotenv('export KEY=value\n');
       const line = parsed.lines[0];
+      expect(line?.kind).toBe('assignment');
       if (line?.kind === 'assignment') {
         expect(line.exported).toBe(true);
       }
@@ -161,23 +164,28 @@ describe('dotenv', () => {
     it('throws SEP_GITIGNORE_UNSAFE when file is git-tracked', () => {
       const paths = projectPaths(tmpDir);
 
+      // Only the git *setup* may be skipped. The previous version wrapped the
+      // assertions themselves in `try { ... } catch {}`, so a setDotenvValue
+      // that happily wrote to a git-tracked .env threw an AssertionError that
+      // was swallowed by that same catch — this guarantee was untested. The
+      // inner `if (error instanceof SepError)` hid a wrong error type too.
       try {
         execSync('git init', { cwd: tmpDir, stdio: 'ignore' });
         writeFileSync(paths.dotenv, 'KEY=value\n', 'utf8');
-
         execSync('git add -f .env', { cwd: tmpDir, stdio: 'ignore' });
-
-        expect(() => setDotenvValue(paths, 'KEY', 'newvalue')).toThrow();
-        try {
-          setDotenvValue(paths, 'KEY', 'newvalue');
-        } catch (error) {
-          if (error instanceof SepError) {
-            expect(error.code).toBe('SEP_GITIGNORE_UNSAFE');
-          }
-        }
       } catch {
-        // Git might not be available in test environment
+        console.warn('git unavailable; SEP_GITIGNORE_UNSAFE check skipped');
+        return;
       }
+
+      let caught: unknown;
+      try {
+        setDotenvValue(paths, 'KEY', 'newvalue');
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught, 'setDotenvValue must refuse a git-tracked .env').toBeInstanceOf(SepError);
+      expect((caught as SepError).code).toBe('SEP_GITIGNORE_UNSAFE');
     });
   });
 
@@ -280,7 +288,12 @@ describe('dotenv', () => {
               .split(/\r\n|\n/)
               .filter((_, i, arr) => i < arr.length - 1 || (arr[arr.length - 1]?.length ?? 0) > 0);
 
-            const assignmentRegex = /^(?:export\s+)?([A-Z][A-Z0-9_]*)=/;
+            // The leading BOM (when the generator emitted one) is glued to the
+            // first line, so it must be stripped before matching the key.
+            // Without this the oracle fails to locate the target assignment on
+            // line 0 of a BOM file, marks it "must be unchanged", and the test
+            // fails on a correct surgical write — roughly 1 run in 16.
+            const assignmentRegex = /^﻿?(?:export\s+)?([A-Z][A-Z0-9_]*)=/;
             const originalAssignIdx = originalLines.findIndex((line) => {
               const match = assignmentRegex.exec(line);
               return match?.[1] === key;

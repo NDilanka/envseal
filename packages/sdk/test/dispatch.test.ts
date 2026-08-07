@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createBroker, dispatch } from '../src/index.js';
 import { Broker } from '@envseal/core';
 
@@ -17,11 +20,22 @@ describe('dispatch', () => {
     async cancel() {}
   }
 
+  let root: string;
+
   beforeEach(() => {
+    // Must be a throwaway directory, NOT process.cwd(). Pointing the broker at
+    // the repo lets env_declare/env_describe read and write `env.schema.jsonc`,
+    // `.env` and `.envseal/` into the source tree, and makes results depend on
+    // whatever state the repo happens to be in.
+    root = mkdtempSync(join(tmpdir(), 'envseal-sdk-dispatch-'));
     broker = createBroker({
-      root: process.cwd(),
+      root,
       prompter: new StubPrompter() as any,
     });
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
   });
 
   it('returns error object for unknown tool', async () => {

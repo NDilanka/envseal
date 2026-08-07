@@ -28,7 +28,7 @@ describe('zero-leak', () => {
     // `outcome`. Returning `{ keys: [...] }` leaves the broker with no entered
     // values, so the ticket resolves as `cancelled` and the flow never runs.
     const stub: Prompter = {
-      id: 'none',
+      id: 'ide',
       available: async () => true,
       prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
         ticket: req.ticket,

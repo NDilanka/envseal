@@ -71,5 +71,9 @@ describe('detector metrics', () => {
 
     expect(recall).toBeGreaterThanOrEqual(0.95);
     expect(falsePositiveRate).toBeLessThanOrEqual(0.02);
+    // high-confidence recall was computed and logged but never gated, so a
+    // regression that demoted every registry-derived pattern from `high` to
+    // `low` confidence produced no failure at all.
+    expect(highConfidenceRecall).toBeGreaterThanOrEqual(0.9);
   });
 });

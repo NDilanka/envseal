@@ -1,13 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { detectHost } from '../src/host.js';
 
 describe('host detection', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(process.cwd(), 'test-host-'));
+    // Must live OUTSIDE the repo. Under process.cwd() the fixture inherits the
+    // repo's own host markers (.claude/, AGENTS.md, ...), so detection can pass
+    // for the wrong reason, and a failed rmSync leaves dirs in the source tree.
+    tempDir = mkdtempSync(join(tmpdir(), 'envseal-test-host-'));
     // Temporarily remove env vars that would interfere with detection
     vi.stubEnv('CLAUDECODE', undefined);
     vi.stubEnv('CURSOR_WORKSPACE', undefined);

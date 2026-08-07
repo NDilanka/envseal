@@ -19,7 +19,7 @@ import type {
   KeyStatus,
 } from '@envseal/protocol';
 import { SepError, asSecret, zero } from '@envseal/protocol';
-import { getProvider } from '@envseal/registry';
+import { getProvider, findKey } from '@envseal/registry';
 import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
 
@@ -149,15 +149,15 @@ export class Broker {
         return entry;
       }
 
-      const registryEntry = getProvider(entry.key);
-      if (!registryEntry) {
+      // Look up by ENV VAR NAME, not provider id. `getProvider('OPENAI_API_KEY')`
+      // never matches — provider ids are 'openai', 'stripe', … — so this path
+      // silently filled in nothing, leaving a model-declared key with no format
+      // validation, no signup link in the prompt, and no verify probe.
+      const found = findKey(entry.key);
+      if (!found) {
         return entry;
       }
-
-      const key = registryEntry.keys.find((k) => k.envVar === entry.key);
-      if (!key) {
-        return entry;
-      }
+      const { provider: registryEntry, key } = found;
 
       return {
         ...entry,
@@ -190,10 +190,16 @@ export class Broker {
       }
     }
 
+    // Report the surface actually selected. Hardcoding 'loopback-browser' told
+    // the caller a browser window had opened even when the resolved prompter was
+    // `none` (CI) or a native dialog — so the model relayed instructions to the
+    // user for a prompt that did not exist.
+    const surface = (await this.getPrompter()).id;
+
     const ticket = this.ticketStore.create({
       keys: input.keys,
       reason: input.reason,
-      surface: 'loopback-browser',
+      surface,
       ttlMs: 600000,
     });
 
@@ -210,9 +216,17 @@ export class Broker {
     return {
       ticket: ticket.ticket,
       nonce: ticket.nonce,
-      surface: ticket.surface as any,
+      // Narrow rather than cast: the ticket stores the surface as a plain
+      // string, but the protocol type is a union. An `as any` here would hide a
+      // typo in a surface name until it reached a client.
+      surface: ticket.surface as Ticket['surface'],
       expiresAt: new Date(ticket.expiresAt).toISOString(),
-      userMessage: `A request has been opened for ${input.keys.join(', ')}. Please respond to the prompt.`,
+      userMessage:
+        surface === 'loopback-browser'
+          ? `A browser window has opened to collect ${input.keys.join(', ')}. Verify it shows code ${ticket.nonce} before typing anything.`
+          : surface === 'none'
+            ? `No interactive surface is available; ${input.keys.join(', ')} must be provided out of band.`
+            : `A prompt has opened to collect ${input.keys.join(', ')}. Verify it shows code ${ticket.nonce}.`,
     };
   }
 
@@ -401,9 +415,19 @@ export class Broker {
       const sink = getSink(entry.sink ?? 'dotenv');
       const removed = await sink.remove(this.paths, keyName);
 
-      let rotateUrl: string | null = null;
-      if (entry.provider?.rotateUrl) {
-        rotateUrl = entry.provider.rotateUrl;
+      // Fall back to the registry. A manifest entry commonly carries only
+      // `provider.id` — a model declaring a key has no reason to type out the
+      // rotation URL — and returning null there defeats the field's whole
+      // purpose, which is telling the user where to invalidate a burned key.
+      let rotateUrl: string | null = entry.provider?.rotateUrl ?? null;
+      if (rotateUrl === null && entry.provider?.id !== undefined) {
+        rotateUrl = getProvider(entry.provider.id)?.keys.find((k) => k.envVar === keyName)
+          ?.rotateUrl
+          ?? getProvider(entry.provider.id)?.keys[0]?.rotateUrl
+          ?? null;
+      }
+      if (rotateUrl === null) {
+        rotateUrl = findKey(keyName)?.key.rotateUrl ?? null;
       }
 
       results.push({

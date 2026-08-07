@@ -1,0 +1,25 @@
+{
+  "name": "@envseal/plugin-claude-code",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Secret Elicitation Protocol (SEP/1) — Claude Code plugin: hooks, slash commands, statusline.",
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p hooks/tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@envseal/core": "workspace:*",
+    "@envseal/detector": "workspace:*",
+    "@envseal/registry": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "latest",
+    "tsx": "latest",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}

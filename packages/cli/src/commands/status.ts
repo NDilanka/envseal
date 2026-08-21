@@ -1,6 +1,7 @@
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { createBroker } from '../cli-utils.js';
+import { finish } from '../exit.js';
 
 export async function status(
   root: string,
@@ -44,7 +45,8 @@ export async function status(
 
     // Exit with UNSATISFIED if required keys are missing
     if (hasRequired) {
-      process.exit(EXIT.UNSATISFIED);
+      finish(EXIT.UNSATISFIED);
+      return;
     }
   } catch (error) {
     fail(json, error);

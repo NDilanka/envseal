@@ -1,6 +1,9 @@
+import { projectPaths } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { createBroker } from '../cli-utils.js';
+import { finish } from '../exit.js';
+import { makeProbeApprover } from '../probe-approval.js';
 
 export async function verify(
   root: string,
@@ -8,7 +11,10 @@ export async function verify(
   json: boolean,
 ): Promise<void> {
   try {
-    const broker = await createBroker(root);
+    const paths = projectPaths(root);
+    const broker = await createBroker(root, {
+      onApprovalNeeded: makeProbeApprover(paths.approvals),
+    });
     const status = await broker.describe();
 
     // Verify specified keys, or all if none specified
@@ -45,7 +51,8 @@ export async function verify(
     }
 
     if (!allOk) {
-      process.exit(EXIT.VERIFY_FAILED);
+      finish(EXIT.VERIFY_FAILED);
+      return;
     }
   } catch (error) {
     fail(json, error);

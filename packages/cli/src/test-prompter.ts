@@ -32,3 +32,36 @@ export function createStubPrompter(value: string): Prompter {
     },
   };
 }
+
+/** Non-`entered` outcomes a stub prompter can be told to report. */
+export type StubOutcome = 'skipped' | 'cancelled' | 'timeout';
+
+export function isStubOutcome(value: string | undefined): value is StubOutcome {
+  return value === 'skipped' || value === 'cancelled' || value === 'timeout';
+}
+
+/**
+ * A prompter that reports a refusal without any UI.
+ *
+ * The documented exit codes for `set` and `ensure` fork on WHY a key was not
+ * stored, and until this existed there was no way to drive `cancelled` or
+ * `timeout` through the real binary — so those rows of docs/cli-contract.md
+ * were asserted by nothing.
+ *
+ * Gated the same way as createStubPrompter (`ENVSEAL_TEST_MODE=1` plus a second
+ * variable), but note it is strictly the safer of the two: it can only ever
+ * make the CLI report that nothing was stored. It cannot introduce a value.
+ */
+export function createRefusingPrompter(outcome: StubOutcome): Prompter {
+  return {
+    id: 'ide',
+    available: async () => true,
+    prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+      ticket: req.ticket,
+      results: req.keys.map((k) => ({ key: k.key, outcome })),
+    }),
+    cancel: async () => {
+      /* nothing to tear down */
+    },
+  };
+}

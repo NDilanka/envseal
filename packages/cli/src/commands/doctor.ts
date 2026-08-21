@@ -5,6 +5,7 @@ import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
 import { createBroker } from '../cli-utils.js';
+import { finish } from '../exit.js';
 
 export async function doctor(root: string, json: boolean): Promise<void> {
   try {
@@ -71,7 +72,8 @@ export async function doctor(root: string, json: boolean): Promise<void> {
 
     // Exit with UNSATISFIED if required keys are missing
     if (status.missingRequired.length > 0) {
-      process.exit(EXIT.UNSATISFIED);
+      finish(EXIT.UNSATISFIED);
+      return;
     }
   } catch (error) {
     fail(json, error);

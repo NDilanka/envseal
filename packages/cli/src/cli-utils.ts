@@ -1,25 +1,91 @@
 import { Broker } from '@envseal/core';
-import { createStubPrompter } from './test-prompter.js';
+import type { TicketKeyOutcome, TicketOutcome } from '@envseal/protocol';
+import { createStubPrompter, createRefusingPrompter, isStubOutcome } from './test-prompter.js';
+import { registerDisposable } from './exit.js';
+
+type BrokerOpts = ConstructorParameters<typeof Broker>[0];
 
 /**
  * Create a broker for the given project root.
  * Uses the stub prompter if ENVSEAL_TEST_MODE and ENVSEAL_TEST_PROMPTER_VALUE are both set.
+ *
+ * The broker's `dispose()` is registered with the exit path here rather than
+ * left to each command. No command called it before, so every invocation left
+ * the ticket store's sweep interval running into `process.exit()`.
  */
 export async function createBroker(
   root: string,
-  opts?: { onConfirm?: ConstructorParameters<typeof Broker>[0]['onConfirm'] },
+  opts?: {
+    onConfirm?: BrokerOpts['onConfirm'];
+    onApprovalNeeded?: BrokerOpts['onApprovalNeeded'];
+  },
 ): Promise<Broker> {
   let prompter;
 
-  // Double-gated stub prompter for testing only
-  if (
-    process.env.ENVSEAL_TEST_MODE === '1' &&
-    process.env.ENVSEAL_TEST_PROMPTER_VALUE
-  ) {
-    prompter = createStubPrompter(process.env.ENVSEAL_TEST_PROMPTER_VALUE);
+  // Double-gated stub prompters for testing only
+  if (process.env.ENVSEAL_TEST_MODE === '1') {
+    if (process.env.ENVSEAL_TEST_PROMPTER_VALUE) {
+      prompter = createStubPrompter(process.env.ENVSEAL_TEST_PROMPTER_VALUE);
+    } else if (isStubOutcome(process.env.ENVSEAL_TEST_PROMPTER_OUTCOME)) {
+      prompter = createRefusingPrompter(process.env.ENVSEAL_TEST_PROMPTER_OUTCOME);
+    }
   }
 
-  return new Broker({ root, prompter, onConfirm: opts?.onConfirm });
+  const broker = new Broker({
+    root,
+    prompter,
+    onConfirm: opts?.onConfirm,
+    onApprovalNeeded: opts?.onApprovalNeeded,
+  });
+  registerDisposable(() => broker.dispose());
+  return broker;
+}
+
+/**
+ * Whether there is a human we could put a question to.
+ *
+ * `CI` is checked as well as the TTY because a CI runner can attach a pseudo
+ * terminal while there is still nobody watching it; `selectPrompter` already
+ * treats `CI` as decisive, and disagreeing with it here would mean the probe
+ * approval prompt blocks a build that `env_request` correctly refuses.
+ */
+export function hasInteractiveSurface(): boolean {
+  if (process.env.CI !== undefined) return false;
+  return process.stdin.isTTY === true;
+}
+
+/**
+ * The recorded outcome for `key`, or one derived from the ticket state when the
+ * prompt surface never produced one.
+ *
+ * A ticket that expires or is torn down leaves `keys` empty. `set` used to
+ * throw a bare `Error('No outcome returned')` there, which reported a timeout
+ * as a generic internal failure and lost the documented exit code. Returns null
+ * only for the genuinely inconsistent case: the ticket resolved, yet said
+ * nothing about this key.
+ */
+export function outcomeForKey(
+  result: TicketOutcome,
+  key: string,
+): TicketKeyOutcome | null {
+  const recorded = result.keys.find((k) => k.key === key);
+  if (recorded) return recorded.outcome;
+
+  switch (result.state) {
+    case 'expired':
+      return 'timeout';
+    case 'cancelled':
+      return 'cancelled';
+    case 'pending':
+      // `await` returned while still pending: its own timeout fired first.
+      return 'timeout';
+    case 'resolved':
+      return null;
+    default: {
+      const _exhaustive: never = result.state;
+      return _exhaustive;
+    }
+  }
 }
 
 /**

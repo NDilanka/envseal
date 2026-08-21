@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline';
 import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { createBroker } from '../cli-utils.js';
+import { finish } from '../exit.js';
 
 /**
  * Ask the user to approve running a command with secrets injected.
@@ -87,7 +88,8 @@ export async function run(
       });
     }
 
-    process.exit(result.exitCode ?? 0);
+    finish(result.exitCode ?? 0);
+    return;
   } catch (error) {
     fail(json, error);
   }

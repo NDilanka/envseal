@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { finish } from '../exit.js';
 
 export async function mcp(root: string): Promise<void> {
   // Delegate to the mcp-server binary
@@ -6,5 +7,5 @@ export async function mcp(root: string): Promise<void> {
     stdio: 'inherit',
   });
 
-  process.exit(result.status ?? 0);
+  finish(result.status ?? 0);
 }

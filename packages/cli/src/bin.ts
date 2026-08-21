@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { findProjectRoot } from '@envseal/core';
-import { EXIT, exitCodeForError } from './exit-codes.js';
+import { EXIT } from './exit-codes.js';
 import { fail } from './output.js';
+import { finish } from './exit.js';
 import { parseArgs } from './cli-utils.js';
 import { status } from './commands/status.js';
 import { ensure } from './commands/ensure.js';
@@ -21,12 +22,14 @@ async function main(): Promise<void> {
 
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     showHelp();
-    process.exit(EXIT.OK);
+    finish(EXIT.OK);
+    return;
   }
 
   if (argv[0] === '--version' || argv[0] === '-v') {
     console.log(`envseal version ${VERSION}`);
-    process.exit(EXIT.OK);
+    finish(EXIT.OK);
+    return;
   }
 
   const command = argv[0];
@@ -62,7 +65,8 @@ async function main(): Promise<void> {
         const key = parsed.args[0];
         if (!key) {
           console.error('Error: set requires a KEY argument');
-          process.exit(EXIT.USAGE);
+          finish(EXIT.USAGE);
+          break;
         }
         await set(root, key, json);
         break;
@@ -83,12 +87,14 @@ async function main(): Promise<void> {
       case 'run': {
         if (parsed.args.length === 0 || parsed.args[0] !== '--') {
           console.error('Error: run requires -- followed by command');
-          process.exit(EXIT.USAGE);
+          finish(EXIT.USAGE);
+          break;
         }
         const cmdArgs = parsed.args.slice(1);
         if (cmdArgs.length === 0) {
           console.error('Error: run requires a command after --');
-          process.exit(EXIT.USAGE);
+          finish(EXIT.USAGE);
+          break;
         }
         await run(root, cmdArgs, json, parsed.flags.yes === true);
         break;
@@ -103,7 +109,8 @@ async function main(): Promise<void> {
         const key = parsed.args[0];
         if (!key) {
           console.error('Error: revoke requires a KEY argument');
-          process.exit(EXIT.USAGE);
+          finish(EXIT.USAGE);
+          break;
         }
         await revoke(root, key, json);
         break;
@@ -117,7 +124,8 @@ async function main(): Promise<void> {
       default: {
         console.error(`Error: unknown command '${command}'`);
         showHelp();
-        process.exit(EXIT.USAGE);
+        finish(EXIT.USAGE);
+        break;
       }
     }
   } catch (error) {

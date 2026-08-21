@@ -88,11 +88,17 @@ export async function runWithSecrets(
 
   const childEnv = { ...process.env };
   const secretValues: SecretValue[] = [];
+  // W2-F31: docs/cli-contract.md §"redaction" promises masks read
+  // «redacted:KEY_NAME». Nothing but the key name rides along — redact()
+  // rejects a label that is not a plain identifier, so a label can never carry
+  // markup or a value fragment into the output stream.
+  const redactionLabels = new Map<SecretValue, string>();
 
   for (const [key, value] of secrets) {
     const valueStr = unsafeSecretToUtf8(value);
     childEnv[key] = valueStr;
     secretValues.push(value);
+    redactionLabels.set(value, key);
   }
 
   const MAX_BUFFER = 1024 * 1024;
@@ -141,8 +147,8 @@ export async function runWithSecrets(
       const stdoutStr = stdout.toString('utf8');
       const stderrStr = stderr.toString('utf8');
 
-      const redactStdout = redact(stdoutStr, secretValues);
-      const redactStderr = redact(stderrStr, secretValues);
+      const redactStdout = redact(stdoutStr, secretValues, redactionLabels);
+      const redactStderr = redact(stderrStr, secretValues, redactionLabels);
 
       resolve({
         exitCode,

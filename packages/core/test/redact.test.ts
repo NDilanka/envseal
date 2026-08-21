@@ -84,6 +84,102 @@ describe('redact', () => {
     });
   });
 
+  // W2-F9. The old redactor compiled every prefix of length 20..N into one
+  // regex alternation, so the pattern source grew O(N^2) and V8's regex
+  // compiler ABORTED the process at ~4 KB — a FATAL ERROR, not a catchable
+  // SyntaxError, so no try/catch here could observe it. These run in-process on
+  // purpose: if the guard is removed, the worker dies rather than failing.
+  describe('W2-F9 large values do not abort the process', () => {
+    for (const size of [4_000, 64_000, 1_000_000]) {
+      it(`redacts a ${size}-byte value`, () => {
+        const value = `sk-${'A'.repeat(size - 3)}`;
+        const secret = asSecret(Buffer.from(value, 'utf8'));
+        const result = redact(`before ${value} after`, [secret]);
+        expect(result.count).toBe(1);
+        expect(result.text).toBe('before «redacted» after');
+      });
+    }
+
+    it('keeps the >= 20 char prefix rule at every size', () => {
+      const value = `sk-${'ABCDEFGHIJ'.repeat(500)}`;
+      const secret = asSecret(Buffer.from(value, 'utf8'));
+      const result = redact(`truncated: ${value.slice(0, 20)} ...`, [secret]);
+      expect(result.text).not.toContain(value.slice(0, 20));
+      expect(result.text).toBe('truncated: «redacted» ...');
+    });
+  });
+
+  // W2-F5/F6. Coverage that was measured as missing against the real CLI.
+  describe('transformation coverage', () => {
+    const SENTINEL = 'sk-W2SENTINEL-sdk-11112222333344445555';
+    const secret = asSecret(Buffer.from(SENTINEL, 'utf8'));
+
+    it('redacts lowercase hex (F6)', () => {
+      const hex = Buffer.from(SENTINEL, 'utf8').toString('hex');
+      const result = redact(`hex=${hex}`, [secret]);
+      expect(result.text).not.toContain(hex);
+      expect(result.text).toBe('hex=«redacted»');
+    });
+
+    it('redacts uppercase hex', () => {
+      const hex = Buffer.from(SENTINEL, 'utf8').toString('hex').toUpperCase();
+      const result = redact(`hex=${hex}`, [secret]);
+      expect(result.text).not.toContain(hex);
+    });
+
+    it('redacts the suffix left behind by a newline split (F5)', () => {
+      // The exact shape the CLI probe produced: the head is a prefix (always
+      // caught) and the tail is a SUFFIX, which the prefix-only variant list
+      // never matched, so concatenation recovered the value exactly.
+      const head = SENTINEL.slice(0, 10);
+      const tail = SENTINEL.slice(10);
+      const result = redact(`withNewline=${head}\n${tail}`, [secret]);
+      expect(result.text).not.toContain(tail);
+      expect(result.text.replace(/«redacted»/g, '').replace(/\s/g, '')).toBe('withNewline=');
+    });
+
+    it('redacts an interior fragment of at least 20 characters', () => {
+      const middle = SENTINEL.slice(9, 33);
+      expect(middle.length).toBeGreaterThanOrEqual(20);
+      const result = redact(`fragment ${middle} end`, [secret]);
+      expect(result.text).toBe('fragment «redacted» end');
+    });
+
+    it('leaves a fragment shorter than the 20-character window alone', () => {
+      // Stated plainly rather than glossed: below the window there is no
+      // coverage, and pretending otherwise would be the defect.
+      const short = SENTINEL.slice(9, 28).slice(0, 19);
+      const result = redact(`fragment ${short} end`, [secret]);
+      expect(result.count).toBe(0);
+      expect(result.text).toContain(short);
+    });
+  });
+
+  describe('labels (W2-F31)', () => {
+    it('falls back to the generic token for a label that is not an identifier', () => {
+      const secret = asSecret(Buffer.from('verylongsecretkey123', 'utf8'));
+      const labels = new Map([[secret, 'A"><img src=x>']]);
+      const result = redact('contains verylongsecretkey123 in it', [secret], labels);
+      expect(result.text).toBe('contains «redacted» in it');
+      expect(result.text).not.toContain('<img');
+    });
+
+    it('labels each value with its own key when several are live', () => {
+      const first = asSecret(Buffer.from('firstsecretvalue1234', 'utf8'));
+      const second = asSecret(Buffer.from('secondsecretvalue567', 'utf8'));
+      const labels = new Map([
+        [first, 'OPENAI_API_KEY'],
+        [second, 'STRIPE_SECRET_KEY'],
+      ]);
+      const result = redact(
+        'a=firstsecretvalue1234 b=secondsecretvalue567',
+        [first, second],
+        labels,
+      );
+      expect(result.text).toBe('a=«redacted:OPENAI_API_KEY» b=«redacted:STRIPE_SECRET_KEY»');
+    });
+  });
+
   describe('property-based tests', () => {
     it('never leaks the raw secret', () => {
       fc.assert(

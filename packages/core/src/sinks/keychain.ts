@@ -13,6 +13,7 @@ function execCommand(
   file: string,
   args: string[],
   input?: string,
+  env?: Record<string, string | undefined>,
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let stdout = '';
@@ -21,6 +22,7 @@ function execCommand(
     const proc = spawn(file, args, {
       shell: false,
       stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      ...(env ? { env } : {}),
     });
 
     if (proc.stdout) {
@@ -103,12 +105,29 @@ class KeychainSink implements Sink {
       mkdirSync(dir, { recursive: true });
 
       const escapedPath = join(dir, key).replace(/\\/g, '\\\\');
-      const script = `$value = [System.IO.File]::ReadAllText([System.Console]::In)\n$secure = ConvertTo-SecureString -String $value -AsPlainText -Force\n$encrypted = ConvertFrom-SecureString -SecureString $secure\n[System.IO.File]::WriteAllText('${escapedPath}', $encrypted)`;
+      // @($input), not [System.Console]::In: the PowerShell console host reads
+      // an empty string from a spawned pipe's stdin. The empty checks exit 1 so
+      // that can never again become a silent 0-byte blob.
+      const script = [
+        "$ErrorActionPreference = 'Stop'",
+        '$value = @($input) -join "`n"',
+        'if (-not $value) { exit 1 }',
+        '$secure = ConvertTo-SecureString -String $value -AsPlainText -Force',
+        '$encrypted = ConvertFrom-SecureString -SecureString $secure',
+        'if (-not $encrypted) { exit 1 }',
+        `[System.IO.File]::WriteAllText('${escapedPath}', $encrypted)`,
+      ].join('\n');
       const scriptPath = join(dir, `${key}.ps1`);
       writeFileSync(scriptPath, script);
 
+      // Editors and shells export a PSModulePath that leads with PowerShell 7
+      // module dirs; those shadow 5.1's Security module (duplicate type data)
+      // and ConvertTo-SecureString silently vanishes. Dropping the variable
+      // makes 5.1 rebuild its own defaults.
+      const { PSModulePath: _shadowed, ...childEnv } = process.env;
+
       try {
-        await execCommand('powershell', ['-NoProfile', '-File', scriptPath], valueStr);
+        await execCommand('powershell', ['-NoProfile', '-File', scriptPath], valueStr, childEnv);
       } finally {
         try {
           unlinkSync(scriptPath);

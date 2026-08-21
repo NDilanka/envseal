@@ -13,6 +13,7 @@ import { dirname, basename, join, relative } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { asSecret, SepError } from '@envseal/protocol';
 import type { SecretValue } from '@envseal/protocol';
+import { ensureStateDir } from '../paths.js';
 import type { ProjectPaths } from '../paths.js';
 import type { Sink } from './types.js';
 
@@ -172,20 +173,49 @@ function rebuildAssignment(line: DotenvLine, value: string): DotenvLine {
   return { ...line, value, text };
 }
 
+// On Windows, touching a file another process has a handle on intermittently
+// fails with EPERM / EACCES / EBUSY: antivirus scanners, the search indexer and
+// editors all take brief handles on a file they just saw written. The operation
+// succeeds once the handle is released, so the fix is a bounded retry rather
+// than a fallback to something non-atomic. Found by the dotenv property test,
+// which only reproduced it after ~250 writes in quick succession.
+//
+// F-W7-4: this used to guard the rename only. The same transient handle fails
+// the *read* just as readily — and a read failure happens before the rename
+// loop is ever reached, so the retry budget never ran.
+const RETRY_DELAYS_MS = [1, 2, 5, 10, 25, 50, 100];
+const TRANSIENT_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+function withTransientRetry<T>(operation: () => T): T {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return operation();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === undefined || !TRANSIENT_CODES.has(code)) throw error;
+      lastError = error;
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) break;
+      // Synchronous sleep: this path must stay sync because the whole sink API
+      // is sync, and the waits are sub-100ms.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+    }
+  }
+  throw lastError;
+}
+
 function readFileIfPresent(path: string): string | null {
   try {
-    return readFileSync(path, 'utf8');
+    return withTransientRetry(() => readFileSync(path, 'utf8'));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return null;
   }
 }
 
-function atomicWrite(target: string, content: string): void {
-  const dir = dirname(target);
-  const base = basename(target);
-  const tmp = join(dir, `.${base}.${randomBytes(6).toString('hex')}.tmp`);
-  const fd = openSync(tmp, 'w', 0o600);
+function writeTempFile(tmp: string, content: string): void {
+  const fd = openSync(tmp, 'wx', 0o600);
   try {
     writeSync(fd, content, null, 'utf8');
     fsyncSync(fd);
@@ -193,40 +223,73 @@ function atomicWrite(target: string, content: string): void {
     closeSync(fd);
   }
   if (isPosix) chmodSync(tmp, 0o600);
-  renameOverwrite(tmp, target);
 }
 
-// On Windows, renaming over an existing file intermittently fails with EPERM /
-// EACCES / EBUSY: antivirus scanners, the search indexer and editors all take
-// brief handles on a file they just saw written. The operation is still atomic
-// once it succeeds, so the fix is a bounded retry rather than a fallback to a
-// non-atomic copy. Found by the dotenv property test, which only reproduced it
-// after ~250 writes in quick succession.
-const RENAME_RETRY_DELAYS_MS = [1, 2, 5, 10, 25, 50, 100];
-
-function renameOverwrite(tmp: string, target: string): void {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= RENAME_RETRY_DELAYS_MS.length; attempt++) {
-    try {
-      renameSync(tmp, target);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw error;
-      lastError = error;
-      const delay = RENAME_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined) break;
-      // Synchronous sleep: this path must stay sync because the whole sink API
-      // is sync, and the waits are sub-100ms.
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
-    }
+/**
+ * Write `content` to `target` so that a reader never observes a partial file.
+ *
+ * The temp file holds the complete plaintext, so where it lives matters
+ * (F-W7-3): `.<basename>.<hex>.tmp` next to the target is `..env.<hex>.tmp`,
+ * which a `.gitignore` entry of `.env` does NOT match — a leftover would be a
+ * stageable plaintext secret. It goes in `.envseal/` instead, which is mode
+ * 0700 and carries its own `.gitignore` of `*` (see ensureStateDir).
+ *
+ * `.envseal/` is `<root>/.envseal`, so it is on the same volume as `.env` by
+ * construction and the rename stays atomic. If someone has made it a junction
+ * onto another volume the rename reports EXDEV, and we fall back to a sibling
+ * temp file rather than performing a non-atomic cross-volume copy.
+ */
+function atomicWrite(paths: ProjectPaths, target: string, content: string): void {
+  const suffix = `${basename(target)}.${randomBytes(6).toString('hex')}.tmp`;
+  const sibling = join(dirname(target), `.${suffix}`);
+  let tmp = join(paths.stateDir, suffix);
+  try {
+    ensureStateDir(paths);
+    writeTempFile(tmp, content);
+  } catch {
+    tmp = sibling;
+    writeTempFile(tmp, content);
   }
   try {
-    unlinkSync(tmp);
-  } catch {
-    // best effort: leaving a stray tmp file is preferable to masking lastError
+    renameOverwrite(tmp, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+    writeTempFile(sibling, content);
+    renameOverwrite(sibling, target);
   }
-  throw lastError;
+}
+
+function renameOverwrite(tmp: string, target: string): void {
+  try {
+    withTransientRetry(() => renameSync(tmp, target));
+  } catch (error) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // best effort: leaving a stray tmp file is preferable to masking the error
+    }
+    throw error;
+  }
+}
+
+/**
+ * F-W7-4: every filesystem failure used to escape as a bare Node error, so the
+ * CLI never mapped it to exit code 5 and the message carried the target's
+ * absolute path. Callers see SEP_SINK_WRITE_FAILED with the errno only.
+ */
+function asSinkWriteError(error: unknown, target: string): SepError {
+  if (error instanceof SepError) return error;
+  const code = (error as NodeJS.ErrnoException).code;
+  const name = basename(target);
+  const detail =
+    code === undefined
+      ? ''
+      : ` (${code}) — it may be open in another program, read-only, or on a full disk`;
+  return new SepError({
+    code: 'SEP_SINK_WRITE_FAILED',
+    userMessage: `Could not update ${name} in the project directory${detail}.`,
+    details: { file: name, errno: code ?? null },
+  });
 }
 
 function runGit(cwd: string, args: string[]): number {
@@ -312,38 +375,47 @@ export function setDotenvValue(
   value: string,
   options?: WriteDotenvOptions,
 ): void {
+  // Outside the try: SEP_GITIGNORE_UNSAFE is a refusal, not a write failure.
   assertGitSafe(paths, options?.allowUnsafe);
-  const text = readFileIfPresent(paths.dotenv);
-  if (text === null) {
-    atomicWrite(paths.dotenv, buildNewFile(key, value, options?.description));
-    return;
-  }
-  const parsed = parseDotenv(text);
-  let lastIndex = -1;
-  parsed.lines.forEach((line, index) => {
-    if (line.kind === 'assignment' && line.key === key) lastIndex = index;
-  });
-  if (lastIndex >= 0) {
-    const existing = parsed.lines[lastIndex];
-    if (existing && existing.kind === 'assignment') {
-      parsed.lines[lastIndex] = rebuildAssignment(existing, value);
+  try {
+    const text = readFileIfPresent(paths.dotenv);
+    if (text === null) {
+      atomicWrite(paths, paths.dotenv, buildNewFile(key, value, options?.description));
+      return;
     }
-  } else {
-    parsed.lines.push(...buildAppendLines(key, value, options?.description));
+    const parsed = parseDotenv(text);
+    let lastIndex = -1;
+    parsed.lines.forEach((line, index) => {
+      if (line.kind === 'assignment' && line.key === key) lastIndex = index;
+    });
+    if (lastIndex >= 0) {
+      const existing = parsed.lines[lastIndex];
+      if (existing && existing.kind === 'assignment') {
+        parsed.lines[lastIndex] = rebuildAssignment(existing, value);
+      }
+    } else {
+      parsed.lines.push(...buildAppendLines(key, value, options?.description));
+    }
+    atomicWrite(paths, paths.dotenv, serializeDotenv(parsed));
+  } catch (error) {
+    throw asSinkWriteError(error, paths.dotenv);
   }
-  atomicWrite(paths.dotenv, serializeDotenv(parsed));
 }
 
 export function removeDotenvKey(paths: ProjectPaths, key: string, options?: { allowUnsafe?: boolean }): boolean {
   assertGitSafe(paths, options?.allowUnsafe);
-  const parsed = parseDotenv(readFileIfPresent(paths.dotenv) ?? '');
-  const before = parsed.lines.length;
-  parsed.lines = parsed.lines.filter((line) => !(line.kind === 'assignment' && line.key === key));
-  const removed = parsed.lines.length !== before;
-  if (removed) {
-    atomicWrite(paths.dotenv, serializeDotenv(parsed));
+  try {
+    const parsed = parseDotenv(readFileIfPresent(paths.dotenv) ?? '');
+    const before = parsed.lines.length;
+    parsed.lines = parsed.lines.filter((line) => !(line.kind === 'assignment' && line.key === key));
+    const removed = parsed.lines.length !== before;
+    if (removed) {
+      atomicWrite(paths, paths.dotenv, serializeDotenv(parsed));
+    }
+    return removed;
+  } catch (error) {
+    throw asSinkWriteError(error, paths.dotenv);
   }
-  return removed;
 }
 
 export class DotenvSink implements Sink {

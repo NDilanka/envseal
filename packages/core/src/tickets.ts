@@ -33,6 +33,8 @@ function makeNonce(): string {
 
 const DEFAULT_TTL_MS = 600_000;
 const SWEEP_INTERVAL_MS = 60_000;
+/** setTimeout silently fires immediately past this, which would settle early. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 export interface TicketStoreOptions {
   ttlMs?: number;
@@ -42,6 +44,7 @@ export interface TicketStoreOptions {
 export class TicketStore {
   private readonly records = new Map<string, TicketRecord>();
   private readonly waiters = new Map<string, Set<() => void>>();
+  private readonly pendingAwaits = new Set<() => void>();
   private readonly timer: ReturnType<typeof setInterval>;
   private readonly defaultTtlMs: number;
 
@@ -94,10 +97,19 @@ export class TicketStore {
 
   sweep(now: number = Date.now()): void {
     for (const record of this.records.values()) {
-      if (record.state === 'pending' && record.expiresAt <= now) {
-        record.state = 'expired';
-        this.bump(record.ticket);
-      }
+      this.expireIfDue(record, now);
+    }
+  }
+
+  /**
+   * F-W7-6: expiry used to be computed only by the 60s sweep, so an await that
+   * outlived a shorter TTL reported `pending` rather than `expired`. Every
+   * caller that can observe a record evaluates `expiresAt` itself.
+   */
+  private expireIfDue(record: TicketRecord, now: number = Date.now()): void {
+    if (record.state === 'pending' && record.expiresAt <= now) {
+      record.state = 'expired';
+      this.bump(record.ticket);
     }
   }
 
@@ -108,6 +120,7 @@ export class TicketStore {
         resolvePromise({ ticket, state: 'expired', keys: [] });
         return;
       }
+      this.expireIfDue(record);
       let settled = false;
       let timeout: ReturnType<typeof setTimeout> | undefined;
       const listener = () => {
@@ -117,13 +130,29 @@ export class TicketStore {
         if (settled) return;
         settled = true;
         this.unsubscribe(ticket, listener);
+        this.pendingAwaits.delete(finish);
         if (timeout !== undefined) clearTimeout(timeout);
         resolvePromise(this.toOutcome(record));
       };
-      timeout = setTimeout(finish, timeoutMs);
-      timeout.unref();
+      if (record.state !== 'pending') {
+        finish();
+        return;
+      }
+      // Wake at whichever comes first: the caller's timeout, or the ticket's
+      // own expiry.
+      const untilExpiry = Math.max(0, record.expiresAt - Date.now());
+      const delay = Math.min(Math.max(0, timeoutMs), untilExpiry, MAX_TIMER_MS);
+      timeout = setTimeout(() => {
+        this.expireIfDue(record);
+        finish();
+      }, delay);
+      // NOT unref'd. F-W7-6: an unref'd timer let the process exit with this
+      // promise never settled — Node reported "Detected unsettled top-level
+      // await" and exited 13 with no output at all. An outstanding await is an
+      // outstanding operation and must hold the loop open; it is cleared the
+      // moment the promise settles, and dispose() settles it too.
+      this.pendingAwaits.add(finish);
       this.subscribe(ticket, listener);
-      if (record.state !== 'pending') finish();
     });
   }
 
@@ -132,6 +161,10 @@ export class TicketStore {
     for (const listeners of this.waiters.values()) {
       for (const listener of listeners) listener();
     }
+    // Settle anything still waiting, so a disposed store can never leave a
+    // ref'd timer (or a caller's promise) hanging.
+    for (const finish of [...this.pendingAwaits]) finish();
+    this.pendingAwaits.clear();
     this.waiters.clear();
     this.records.clear();
   }

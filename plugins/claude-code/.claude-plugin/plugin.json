@@ -1,90 +1,17 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "envseal",
+  "displayName": "envseal",
   "version": "0.1.0",
   "description": "Secret Elicitation Protocol (SEP/1) — safely provision credentials to AI agents.",
-  "author": "envseal",
-  "mcp_servers": [
-    {
-      "id": "envseal-broker",
-      "command": "node",
-      "args": [
-        "D:\\dev\\Experiments\\env\\packages\\mcp-server\\dist\\bin.js"
-      ]
-    }
-  ],
-  "hooks": [
-    {
-      "type": "pre_tool_use",
-      "command": "node",
-      "args": [
-        "D:\\dev\\Experiments\\env\\plugins\\claude-code\\hooks\\dist\\pre-tool-use.cjs"
-      ]
-    },
-    {
-      "type": "user_prompt_submit",
-      "command": "node",
-      "args": [
-        "D:\\dev\\Experiments\\env\\plugins\\claude-code\\hooks\\dist\\user-prompt-submit.cjs"
-      ]
-    },
-    {
-      "type": "session_start",
-      "command": "node",
-      "args": [
-        "D:\\dev\\Experiments\\env\\plugins\\claude-code\\hooks\\dist\\session-start.cjs"
-      ]
-    }
-  ],
-  "slash_commands": [
-    {
-      "name": "env:status",
-      "description": "List environment variable status",
-      "model": "default",
-      "allowed-tools": "mcp__envseal-broker__*"
-    },
-    {
-      "name": "env:setup",
-      "description": "Prompt to set missing keys",
-      "model": "default",
-      "allowed-tools": "mcp__envseal-broker__*"
-    },
-    {
-      "name": "env:set",
-      "description": "Set a specific environment variable",
-      "argument-hint": "<KEY>",
-      "model": "default",
-      "allowed-tools": "mcp__envseal-broker__*"
-    },
-    {
-      "name": "env:verify",
-      "description": "Verify credentials with probes",
-      "model": "default",
-      "allowed-tools": "mcp__envseal-broker__*"
-    },
-    {
-      "name": "env:rotate",
-      "description": "Revoke and rotate a key",
-      "argument-hint": "<KEY>",
-      "model": "default",
-      "allowed-tools": "mcp__envseal-broker__*"
-    },
-    {
-      "name": "env:doctor",
-      "description": "Check provisioning health",
-      "model": "default",
-      "allowed-tools": "Bash"
-    },
-    {
-      "name": "env:allow-once",
-      "description": "Bypass redaction for one message",
-      "model": "default",
-      "allowed-tools": "Read"
-    }
-  ],
-  "statusline_item": {
-    "command": "node",
-    "args": [
-      "D:\\dev\\Experiments\\env\\plugins\\claude-code\\statusline\\dist\\statusline.cjs"
-    ]
-  }
+  "author": {
+    "name": "envseal"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "secrets",
+    "credentials",
+    "environment-variables",
+    "security"
+  ]
 }

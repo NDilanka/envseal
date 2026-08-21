@@ -165,6 +165,47 @@ interface Payload {
   [key: string]: unknown;
 }
 
+/**
+ * Claude Code's UserPromptSubmit contract.
+ *
+ * A UserPromptSubmit hook CANNOT rewrite the prompt — the documented output has
+ * no `modifiedPrompt`/`updatedInput` field, only `decision: "block"` (which
+ * erases the prompt before the model sees it) and
+ * `hookSpecificOutput.additionalContext` (injected alongside it). The previous
+ * version returned a `modifiedPrompt` nested inside a doubled
+ * `hookSpecificOutput`; Claude Code read none of it, so the pasted key reached
+ * the model verbatim while the hook exited 0.
+ *
+ * Redaction is therefore implemented as a BLOCK, not a rewrite: a detected
+ * secret erases the prompt and returns a reason that names the detector labels
+ * and rotation URLs but never the value. Fail-closed by construction — the only
+ * two outcomes are "no secret detected, pass through" and "erased".
+ *
+ * Note also that for this event Claude Code adds the hook's stdout to context,
+ * so the output must never carry the prompt back.
+ *
+ * See https://code.claude.com/docs/en/hooks (UserPromptSubmit output).
+ */
+export type UserPromptSubmitHookOutput =
+  | { decision: 'block'; reason: string; systemMessage: string }
+  | Record<string, never>;
+
+export function toHookOutput(outcome: UserPromptResult): UserPromptSubmitHookOutput {
+  if (!outcome.detected || outcome.bypassed) {
+    return {};
+  }
+  const notice = outcome.notice ?? buildNotice([]);
+  return {
+    decision: 'block',
+    reason:
+      'envseal blocked this message: it contained what looks like a live credential' +
+      `${outcome.labels.length > 0 ? ` (${outcome.labels.join(', ')})` : ''}. ` +
+      'The message was not delivered. Ask the user to store the key with `/env:set <KEY>` ' +
+      'and read it back through `env_use`; never ask them to paste it into the chat.',
+    systemMessage: notice,
+  };
+}
+
 export function run(): Promise<void> {
   return readPayload<Payload>()
     .then((payload) => {
@@ -180,15 +221,7 @@ export function run(): Promise<void> {
       if (outcome.notice !== undefined && outcome.detected && !outcome.bypassed) {
         process.stderr.write(outcome.notice + '\n');
       }
-      return {
-        modifiedMessage: outcome.modifiedMessage,
-        detected: outcome.detected,
-        hookSpecificOutput: {
-          hookSpecificOutput: {
-            modifiedPrompt: outcome.modifiedMessage,
-          },
-        },
-      };
+      return toHookOutput(outcome);
     })
     .then((result) => {
       writeResult(result);
@@ -199,13 +232,15 @@ if (process.argv[1] !== undefined) {
   const isMain = /user-prompt-submit(?:\.cjs|\.js|\.ts)?$/.test(process.argv[1]);
   if (isMain) {
     run().catch(() => {
-      // Fail closed: on any top-level failure, indicate full redaction.
-      const fallback = {
-        modifiedMessage: '«redacted-secret»',
-        detected: true,
-        hookSpecificOutput: { hookSpecificOutput: { modifiedPrompt: '«redacted-secret»' } },
-      };
-      writeResult(fallback);
+      // Fail closed: if we cannot tell whether this message holds a secret, the
+      // message does not go to the model.
+      writeResult({
+        decision: 'block',
+        reason:
+          'envseal could not scan this message for credentials, so it was not delivered. ' +
+          'Ask the user to resend it; if it contains a key, store it with `/env:set <KEY>` instead.',
+        systemMessage: '[envseal] Secret scan failed; the message was blocked rather than sent.',
+      });
     });
   }
 }

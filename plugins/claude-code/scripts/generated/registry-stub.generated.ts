@@ -1,6 +1,17 @@
 // Generated at build time from packages/registry/providers/*.json — do not edit.
+type StubVerify = {
+  method?: string;
+  url?: string;
+  headerTemplate?: Record<string, string>;
+  expectStatus?: number[];
+};
 type StubFormat = { prefix?: string; pattern?: string; example: string };
-type StubKey = { envVar: string; format: StubFormat; rotateUrl?: string };
+type StubKey = {
+  envVar: string;
+  format: StubFormat;
+  rotateUrl?: string;
+  verify?: StubVerify;
+};
 type StubProvider = { id: string; name: string; keys: StubKey[] };
 
 const PROVIDERS = [
@@ -15,7 +26,18 @@ const PROVIDERS = [
           "pattern": "^sk-ant-[A-Za-z0-9_-]{20,}$",
           "example": "sk-ant-XXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://console.anthropic.com/"
+        "rotateUrl": "https://console.anthropic.com/",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.anthropic.com/v1/models",
+          "headerTemplate": {
+            "x-api-key": "{{value}}",
+            "anthropic-version": "2023-06-01"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -217,7 +239,17 @@ const PROVIDERS = [
           "pattern": "^(ghp_|github_pat_)[A-Za-z0-9_]{36,}$",
           "example": "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://github.com/settings/tokens"
+        "rotateUrl": "https://github.com/settings/tokens",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.github.com/user",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -262,7 +294,17 @@ const PROVIDERS = [
           "pattern": "^gsk_[A-Za-z0-9_-]{32,}$",
           "example": "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://console.groq.com/keys"
+        "rotateUrl": "https://console.groq.com/keys",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.groq.com/openai/v1/models",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -395,7 +437,17 @@ const PROVIDERS = [
           "pattern": "^sk-[A-Za-z0-9_-]{20,}$",
           "example": "sk-XXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://platform.openai.com/account/api-keys"
+        "rotateUrl": "https://platform.openai.com/account/api-keys",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.openai.com/v1/models",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -410,7 +462,17 @@ const PROVIDERS = [
           "pattern": "^sk-or-[A-Za-z0-9_-]{32,}$",
           "example": "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://openrouter.ai/keys"
+        "rotateUrl": "https://openrouter.ai/keys",
+        "verify": {
+          "method": "GET",
+          "url": "https://openrouter.ai/api/v1/key",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -478,7 +540,17 @@ const PROVIDERS = [
           "pattern": "^re_[A-Za-z0-9_-]{32,}$",
           "example": "re_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://resend.com/api-keys"
+        "rotateUrl": "https://resend.com/api-keys",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.resend.com/domains",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       }
     ]
   },
@@ -541,7 +613,17 @@ const PROVIDERS = [
           "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,}$",
           "example": "sk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
         },
-        "rotateUrl": "https://dashboard.stripe.com/apikeys"
+        "rotateUrl": "https://dashboard.stripe.com/apikeys",
+        "verify": {
+          "method": "GET",
+          "url": "https://api.stripe.com/v1/balance",
+          "headerTemplate": {
+            "Authorization": "Bearer {{value}}"
+          },
+          "expectStatus": [
+            200
+          ]
+        }
       },
       {
         "envVar": "STRIPE_PUBLISHABLE_KEY",
@@ -632,11 +714,20 @@ export function findKey(
   return undefined;
 }
 
+// Must stay byte-for-byte equivalent to @envseal/registry's allProbeHosts:
+// core/approvals.ts tests membership with `allowlist.has(url.hostname)`, so a
+// stub that yielded provider IDs (as this once did) makes every probe host
+// look unapproved.
 export function allProbeHosts(): Set<string> {
   const hosts = new Set<string>();
   for (const provider of PROVIDERS) {
     for (const key of provider.keys) {
-      if (key.format.pattern !== undefined) hosts.add(provider.id);
+      if (key.verify?.url === undefined) continue;
+      try {
+        hosts.add(new URL(key.verify.url).hostname);
+      } catch {
+        // Invalid URL, skip — same as the real registry.
+      }
     }
   }
   return hosts;

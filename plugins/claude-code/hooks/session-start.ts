@@ -43,18 +43,37 @@ export function computeContext(root: string): string {
   }
 }
 
+/**
+ * Claude Code's SessionStart contract: context is injected from
+ * `hookSpecificOutput.additionalContext`. The previous shape nested
+ * `hookSpecificOutput` inside itself and used a `contextMessage` key that
+ * Claude Code does not read, so the missing-keys note never reached the model.
+ *
+ * See https://code.claude.com/docs/en/hooks (SessionStart output).
+ */
+export interface SessionStartHookOutput {
+  hookSpecificOutput: {
+    hookEventName: 'SessionStart';
+    additionalContext: string;
+  };
+}
+
+export function toHookOutput(contextMessage: string): SessionStartHookOutput {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'SessionStart',
+      additionalContext: contextMessage,
+    },
+  };
+}
+
 export function run(): Promise<void> {
   return readPayload<SessionInput>()
     .then((payload) => {
       const root =
         payload.projectRoot ?? payload.workspaceRoot ?? payload.cwd ?? process.cwd();
       const contextMessage = computeContext(findProjectRoot(root));
-      return {
-        contextMessage,
-        hookSpecificOutput: {
-          hookSpecificOutput: { contextMessage },
-        },
-      };
+      return toHookOutput(contextMessage);
     })
     .then((result) => {
       writeResult(result);
@@ -65,7 +84,7 @@ if (process.argv[1] !== undefined) {
   const isMain = /session-start(?:\.cjs|\.js|\.ts)?$/.test(process.argv[1]);
   if (isMain) {
     run().catch(() => {
-      writeResult({ contextMessage: '' });
+      writeResult(toHookOutput(''));
     });
   }
 }

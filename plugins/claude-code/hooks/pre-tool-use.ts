@@ -44,11 +44,13 @@ export function normalizePayload(payload: unknown): ToolCall {
   const path =
     typeof input.file_path === 'string'
       ? input.file_path
-      : typeof input.path === 'string'
-        ? input.path
-        : typeof p.path === 'string'
-          ? p.path
-          : undefined;
+      : typeof input.notebook_path === 'string'
+        ? input.notebook_path
+        : typeof input.path === 'string'
+          ? input.path
+          : typeof p.path === 'string'
+            ? p.path
+            : undefined;
   const command =
     typeof input.command === 'string'
       ? input.command
@@ -71,6 +73,18 @@ const FILE_READERS = new Set([
   'type',
 ]);
 const SEGMENT_SPLIT_RE = /\s*(?:&&|\|\||;|\||\(|\)|\n)\s*/;
+/** Tools that name a file to read or mutate. Kept in sync with the PreToolUse
+ *  matcher in hooks/hooks.json — a tool listed in one and not the other is a
+ *  hole in the guard. plugin-contract.test.ts reads this list to assert that
+ *  sync, so it must stay exported. */
+export const FILE_TOOLS_FOR_TEST: readonly string[] = [
+  'Read',
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+];
+const FILE_TOOLS = new Set(FILE_TOOLS_FOR_TEST);
 
 export function isDeniedSecretPath(path: string): boolean {
   const norm = path.replace(/\\/g, '/');
@@ -203,10 +217,10 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
   );
 
   // --- File operations -----------------------------------------------------
-  if (call.tool === 'Read' || call.tool === 'Edit' || call.tool === 'Write') {
+  if (FILE_TOOLS.has(call.tool)) {
     const path = call.path;
     if (path !== undefined && isDeniedSecretPath(path)) {
-      const verb = call.tool === 'Read' ? 'reading' : call.tool === 'Edit' ? 'editing' : 'writing';
+      const verb = call.tool === 'Read' ? 'reading' : call.tool === 'Write' ? 'writing' : 'editing';
       return {
         allow: false,
         reason:
@@ -350,6 +364,35 @@ export function loadDeclaredSecrets(root: string): string[] {
   }
 }
 
+/**
+ * Claude Code's PreToolUse contract. The decision is read from
+ * `hookSpecificOutput.permissionDecision`, and `hookEventName` must be present
+ * and match the fired event; anything else is ignored and the tool call
+ * proceeds. A previous version emitted `permissionDecision` at the TOP level,
+ * which Claude Code does not read — every `.env` read this hook was installed
+ * to deny was silently allowed, while the bundle exited 0 and looked healthy.
+ *
+ * See https://code.claude.com/docs/en/hooks (PreToolUse output).
+ */
+export interface PreToolUseHookOutput {
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse';
+    permissionDecision: 'allow' | 'deny';
+    permissionDecisionReason: string;
+  };
+}
+
+export function toHookOutput(decision: Decision): PreToolUseHookOutput {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: decision.allow ? 'allow' : 'deny',
+      permissionDecisionReason:
+        decision.reason ?? (decision.allow ? 'No envseal rule matched.' : 'Blocked by envseal.'),
+    },
+  };
+}
+
 export function run(): Promise<void> {
   return readPayload<Payload>()
     .then((payload) => {
@@ -357,12 +400,7 @@ export function run(): Promise<void> {
       const root = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
       const decision = decide(call, { declaredSecrets });
-      return {
-        ...decision,
-        // Real Claude Code pre_tool_use contract (spec output carried too).
-        permissionDecision: decision.allow ? 'allow' : 'deny',
-        denyReason: decision.reason,
-      };
+      return toHookOutput(decision);
     })
     .then((result) => {
       writeResult(result);
@@ -374,13 +412,12 @@ if (process.argv[1] !== undefined) {
   if (isMain) {
     run().catch((error: unknown) => {
       // Fail open: an internal error must not block tool use.
-      const fallback = {
-        allow: true,
-        permissionDecision: 'allow',
-        denyReason: undefined,
-        error: error instanceof Error ? error.message : String(error),
-      };
-      writeResult(fallback);
+      writeResult({
+        ...toHookOutput({
+          allow: true,
+          reason: `envseal hook error: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      });
     });
   }
 }

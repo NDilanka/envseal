@@ -105,8 +105,8 @@ tickets, and redacted status.
 | T7 | `.env` gets committed | Broker asserts `.gitignore` coverage before writing, offers to add it, and installs an optional pre-commit guard. Refuses to write to a tracked file without explicit override. |
 | T8 | **Malicious manifest exfiltrates the key via its "validation probe"** | Probe hosts must be on the provider-registry allowlist, or the exact host is displayed in the approval UI and requires explicit first-use consent, recorded per-project. See §6.4. |
 | T9 | Local phishing: another process opens a lookalike input page | Ticket nonce is displayed in the terminal/agent UI *and* rendered in the page header; user matches them. Loopback server is single-use, bound to 127.0.0.1, port 0, with Host/Origin validation. See §5.2. |
-| T10 | DNS rebinding against the loopback server | Reject any request whose `Host` header is not `127.0.0.1:<port>`. Reject any request with an `Origin` header. |
-| T11 | Prompt injection in repo content drives `env_request` + exfiltration | Popup always shows project path + the model's verbatim `reason` string + the target sink. `env_use` requires confirmation for commands with network egress, and shows the command. Residual risk — see §9. |
+| T10 | DNS rebinding against the loopback server | Reject any request whose `Host` header is not `127.0.0.1:<port>`. If an `Origin` header is present it MUST equal `http://127.0.0.1:<port>` or be the string `null`; any other value is rejected with 400. (Browsers send `Origin` on every POST, including same-origin ones; because this page sets `Referrer-Policy: no-referrer`, the browser serializes that origin as `null`. Origin is defence-in-depth here — the primary controls are the 128-bit path nonce and the ticket-bound CSRF token, neither readable cross-origin.) |
+| T11 | Prompt injection in repo content drives `env_request` + exfiltration | Popup always shows project path + the model's verbatim `reason` string + the target sink. `env_use` requires confirmation for every command and shows it; commands with network egress add an explicit warning. Residual risk — see §9. |
 | T12 | Broker writes the value into its own log | Structured logger with a hard allowlist of loggable fields. Values are never passed to the logger; the type system enforces this (`SecretValue` is a branded type with no `toString`). |
 | T13 | Value persists in memory / swap | Values held in `Buffer`, zeroed after use, minimal lifetime. Node string immutability is a documented limitation; mitigated by never converting to `string` outside the sink writer. |
 | T14 | Man-in-the-middle on the verification probe | Probe MUST use HTTPS with default cert validation. No `NODE_TLS_REJECT_UNAUTHORIZED=0` escape hatch. |
@@ -156,7 +156,7 @@ tickets, and redacted status.
 │  HARNESS  (Claude Code / Codex / Cursor / Zed / Cline)                    │
 │    + hooks:  PreToolUse guard · UserPromptSubmit redactor · statusline    │
 └─────────────────────────────┬────────────────────────────────────────────┘
-                              │  spawns (stdio)  /  connects (http+sse)
+                              │  spawns (stdio)
 ┌─────────────────────────────┴────────────────────────────────────────────┐
 │  BROKER  (trusted)                                                        │
 │  ┌────────────┐ ┌─────────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐ │
@@ -173,7 +173,7 @@ tickets, and redacted status.
               ┌────────────────────────┴──────────────────────────┐
               │  PROMPTER ADAPTERS (secure input surfaces)         │
               │   1. loopback-browser   (default, cross-platform)  │
-              │   2. native-dialog      (osascript/WinForms/zenity)│
+              │   2. native-dialog    (osascript/PowerShell/zenity)│
               │   3. ide                (VS Code showInputBox)     │
               │   4. tty                (direct /dev/tty, CONIN$)  │
               │   5. none                (CI → hard fail)          │
@@ -207,7 +207,7 @@ with four independent front doors, in descending order of integration quality. A
 
 | Tier | Transport | Hosts it covers | What the host must support |
 |---|---|---|---|
-| **1. MCP** | stdio + streamable HTTP | Claude Code, Codex CLI, Cursor, Windsurf, Cline, Roo, Zed, Continue, Amp, Goose, Kilo, JetBrains AI, Copilot Agent (MCP), OpenAI Agents SDK, LangGraph/CrewAI via MCP client | MCP tool calling |
+| **1. MCP** | stdio (an HTTP surface exists as the separate `@envseal/http-server` binding, which speaks REST, not MCP) | Claude Code, Codex CLI, Cursor, Windsurf, Cline, Roo, Zed, Continue, Amp, Goose, Kilo, JetBrains AI, Copilot Agent (MCP), OpenAI Agents SDK, LangGraph/CrewAI via MCP client | MCP tool calling |
 | **2. Native function/tool schema** | in-process import or HTTP | Any custom agent built on OpenAI/Anthropic/Gemini/Bedrock SDKs, LangChain, LlamaIndex, Vercel AI SDK | The ability to register a tool |
 | **3. Local HTTP + OpenAPI** | `127.0.0.1` REST, token-authed | Anything that can make an HTTP request — including agents in other languages (Python, Go, Rust) | HTTP |
 | **4. CLI contract** | `envseal` subcommands, JSON on stdout, stable exit codes | **Everything**, including shell-only agents (Aider, OpenHands, Devin-style runners, plain `bash` loops) | The ability to run a command |
@@ -311,7 +311,8 @@ anything, and it gives the user a reviewable artifact.
 #### `env_await(ticket: string, timeoutMs?: number) → TicketOutcome`
 Blocks up to `timeoutMs` (default 90 000, max 120 000 — under every known client timeout). Returns
 per-key outcome: `stored | skipped | cancelled | invalid_format | verify_failed | timeout`. On
-`timeout` the ticket stays live; the model calls again. Never returns a value.
+`timeout` the ticket has been resolved with that per-key outcome; the model opens a new request.
+Never returns a value.
 
 Splitting request/await is required: a single blocking call that waits for a human to find an API
 key will exceed client tool timeouts, and a timeout that also cancels the prompt is a terrible
@@ -330,7 +331,8 @@ approved list; the confirmation UI shows the full command, the keys being inject
 egress warning if the command matches known network tools.
 
 #### `env_revoke(keys: string[]) → RevokeResult`
-Removes from the sink after user confirmation. Records in the audit log. Emits the provider's
+Removes from the sink unconditionally (no confirmation step in the current implementation). Records
+in the audit log. Emits the provider's
 rotation URL from the registry so the model can tell the user where to invalidate the old key.
 
 ### 5.2 The loopback-browser prompter (default surface)
@@ -343,16 +345,21 @@ Mechanics — all normative:
 
 1. Bind an HTTP server to `127.0.0.1:0` (ephemeral port). IPv4 loopback only; do **not** bind `::1`
    or `0.0.0.0`.
-2. Generate a 128-bit path nonce and a separate 6-char display nonce (`7F2A-91C4`) shown in both the
-   terminal and the page header. The user matches them. This is the anti-phishing control (T9).
+2. Generate a 128-bit path nonce and a separate 8-char display nonce (`XXXX-XXXX`, e.g. `7F2A-91C4`)
+   shown in both the terminal and the page header. The user matches them. This is the anti-phishing
+   control (T9).
 3. Open `http://127.0.0.1:<port>/t/<path-nonce>` with the platform opener (`open` / `start` /
    `xdg-open`).
-4. Every request MUST be validated: `Host` header exactly `127.0.0.1:<port>`; no `Origin` header
-   present (a browser only sends `Origin` cross-origin for these methods, so its presence means the
-   request did not come from the page we served); path nonce constant-time compared.
+4. Every request MUST be validated: `Host` header exactly `127.0.0.1:<port>`; if an `Origin` header
+   is present it MUST equal `http://127.0.0.1:<port>` or be the string `null`, and any other value is
+   rejected with 400 (browsers send `Origin` on every POST, including same-origin ones; because this
+   page sets `Referrer-Policy: no-referrer`, the browser serializes that origin as `null`. Origin is
+   defence-in-depth here — the primary controls are the 128-bit path nonce and the ticket-bound CSRF
+   token, neither readable cross-origin); path nonce constant-time compared.
 5. Response headers: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`,
-   `Content-Security-Policy: default-src 'none'; style-src 'nonce-<n>'; form-action 'self'`,
-   `X-Frame-Options: DENY`. No external requests of any kind — page is fully self-contained.
+   `Content-Security-Policy: default-src 'none'; style-src 'nonce-<n>'; script-src 'nonce-<n>';
+   form-action 'self'; base-uri 'none'`, `X-Frame-Options: DENY`. No external requests of any kind —
+   page is fully self-contained.
 6. Form fields use `type="password"`, `autocomplete="off"`, `spellcheck="false"`,
    `data-1p-ignore` / `data-lpignore="true"` to stop password managers from capturing them into an
    unrelated vault entry. Include a "reveal" toggle — users mistype keys constantly and a
@@ -368,7 +375,7 @@ Mechanics — all normative:
 | Adapter | Platform | Implementation | Notes |
 |---|---|---|---|
 | `native-dialog` | macOS | `osascript -e 'display dialog … with hidden answer'` | Pass the prompt via argv-free stdin to avoid it landing in `ps`. One key per dialog. |
-| `native-dialog` | Windows | PowerShell + `System.Windows.Forms` masked `TextBox`, or `Read-Host -AsSecureString` | Script written to a temp file, not passed inline, to avoid command-line exposure. Use `-NonInteractive:$false`. |
+| `native-dialog` | Windows | PowerShell `Read-Host -AsSecureString` | Script written to a temp file, not passed inline, to avoid command-line exposure. Use `-NonInteractive:$false`. |
 | `native-dialog` | Linux | `zenity --password` → `kdialog --password` → `ssh-askpass` | Probe in that order. |
 | `ide` | any | VS Code `window.showInputBox({ password: true, ignoreFocusOut: true })` | Extension registers with the broker over a unix socket / named pipe. Best UX when present. |
 | `tty` | POSIX / Windows | Open `/dev/tty` (or `CONIN$`/`CONOUT$`) directly, bypassing redirected stdio | **Not default.** Collides with Ink-based TUI repaints. Available via config for headless-but-attended shells. Disable echo via `termios`/`SetConsoleMode`, restore in a `finally`. |
@@ -846,9 +853,9 @@ fonts, no images. Renders: project path, the model's verbatim `reason`, the disp
 key: name, description, provider name, "get your key" link, format hint, masked input, reveal
 toggle, skip checkbox.
 **Accept:** integration test drives the server with `undici` — asserts (a) wrong path nonce → 404,
-(b) `Host: evil.local` → 400, (c) request with `Origin` header → 400, (d) valid POST stores the
-value and the listener is closed within 500 ms, (e) second request to the same nonce → connection
-refused.
+(b) `Host: evil.local` → 400, (c) request with a cross-origin `Origin` header → 400, (d) valid POST
+stores the value and the listener is closed within 500 ms, (e) second request to the same nonce →
+connection refused.
 
 ### T5.3 — `native-dialog`
 macOS/Windows/Linux per §5.3. Prompt text passed via stdin or a 0600 temp file, never argv.
@@ -873,7 +880,7 @@ Throws `SEP_NO_INTERACTIVE_SURFACE` listing the missing keys and a copy-pasteabl
 
 ### T6.1 — Server skeleton
 `packages/mcp-server/src/index.ts` — stdio transport, `@modelcontextprotocol/sdk`, `--project <path>`
-arg, `--http --port` for the HTTP+SSE variant.
+arg. stdio only; there is no HTTP transport (an HTTP surface is `@envseal/http-server`'s job).
 
 ### T6.2 — The seven tools
 One file per tool under `src/tools/`. Each: parse input with the protocol schema, call core, map

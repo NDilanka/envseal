@@ -103,7 +103,7 @@ const TOOL_DESCRIPTIONS: Record<(typeof SEP_TOOL_NAMES)[number], string> = {
     'To check whether a key exists instead of running a command, call env_describe.',
 
   env_revoke:
-    'Removes stored credentials after user confirmation. Records in the audit log and emits the provider ' +
+    'Removes stored credentials. Records in the audit log and emits the provider ' +
     'rotation URL so you can help the user invalidate the old key.',
 };
 

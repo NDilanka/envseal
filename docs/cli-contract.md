@@ -30,12 +30,20 @@ Initialize `env.schema.jsonc` at the project root.
 **JSON output:**
 ```json
 {
-  "initialized": true,
   "manifestPath": "/path/to/env.schema.jsonc",
   "host": "claude-code",
-  "message": "..."
+  "protectionTier": "C",
+  "scanned": 14,
+  "added": ["OPENAI_API_KEY"],
+  "updated": [],
+  "unchanged": [],
+  "secretKeys": ["OPENAI_API_KEY"],
+  "configKeys": [],
+  "entries": 1
 }
 ```
+
+`host` is the detected host id (`"unknown"` when nothing matched); `protectionTier` is `"A"`, `"B"`, or `"C"`; `scanned` is the number of files scanned; `added`/`updated`/`unchanged` list the manifest entries by outcome; `secretKeys`/`configKeys` split the declared keys by their `secret` flag; `entries` is the total entry count.
 
 **Exit codes:** Always 0 on success.
 
@@ -207,9 +215,12 @@ envseal run -- npm test
 {
   "exitCode": 0,
   "stdout": "...",
-  "stderr": "..."
+  "stderr": "...",
+  "redactedCount": 0
 }
 ```
+
+`redactedCount` is the number of masking replacements made in the captured stdout/stderr combined (occurrences, not distinct secrets).
 
 **Exit codes:**
 - (passthrough) — Exit code of the child process.
@@ -283,10 +294,12 @@ Remove a key from the sink and report the provider's rotation URL.
 ```json
 {
   "key": "OPENAI_API_KEY",
-  "outcome": "revoked",
+  "removed": true,
   "rotateUrl": "https://platform.openai.com/api-keys"
 }
 ```
+
+`removed` is whether anything was actually removed from the sink; `rotateUrl` is null when the provider registry has no rotation URL for the key.
 
 **Exit codes:**
 - 0 — Key revoked successfully.

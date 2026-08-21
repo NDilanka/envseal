@@ -272,7 +272,7 @@
     "name": "env_use"
   },
   {
-    "description": "Removes stored credentials after user confirmation. Records in the audit log and emits the provider rotation URL so you can help the user invalidate the old key.",
+    "description": "Removes stored credentials. Records in the audit log and emits the provider rotation URL so you can help the user invalidate the old key.",
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,

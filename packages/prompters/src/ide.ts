@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +11,49 @@ import type { PromptKeyResult, PromptRequest, PromptResponse } from './types.js'
 
 function isWindows(): boolean {
   return process.platform === 'win32';
+}
+
+const stateDir = join(homedir(), '.envseal');
+const tokenPath = join(stateDir, 'ide-token');
+
+// --- shared token ----------------------------------------------------------
+// Both this prompter and the extension read `~/.envseal/ide-token`; whichever
+// runs first creates it (32 random hex chars, mode 0600). Every prompt request
+// carries it so an arbitrary local process cannot register itself as the
+// prompter and harvest what the user types. Mirrors the extension's
+// loadOrCreateToken step for step so both sides converge on the same secret no
+// matter who got there first.
+const tokenRegex = /^[0-9a-f]{32}$/;
+
+let cachedToken: string | undefined;
+
+function loadOrCreateToken(): string {
+  if (cachedToken !== undefined) {
+    return cachedToken;
+  }
+  try {
+    const existing = readFileSync(tokenPath).toString('utf8').trim();
+    if (tokenRegex.test(existing)) {
+      cachedToken = existing;
+      return cachedToken;
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== undefined && code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  if (!isWindows()) {
+    chmodSync(stateDir, 0o700);
+  }
+  const fresh = randomBytes(16).toString('hex'); // 32 random hex bytes
+  writeFileSync(tokenPath, fresh, { mode: 0o600 });
+  if (!isWindows()) {
+    chmodSync(tokenPath, 0o600);
+  }
+  cachedToken = fresh;
+  return cachedToken;
 }
 
 function socketPath(): string {
@@ -88,6 +133,8 @@ export class IdePrompter {
   }
 
   async prompt(req: PromptRequest): Promise<PromptResponse> {
+    // Loaded before dialing so a token-file failure never leaves a socket open.
+    const token = loadOrCreateToken();
     const socket = await tryConnect(5000);
     if (socket === null) {
       throw new Error('no IDE prompter registered');
@@ -101,12 +148,21 @@ export class IdePrompter {
           return;
         }
         const line = buffer.slice(0, newlineAt);
-        let parsed: { ticket?: unknown; results?: unknown };
+        let parsed: { ticket?: unknown; results?: unknown; error?: unknown };
         try {
-          parsed = JSON.parse(line) as { ticket?: unknown; results?: unknown };
+          parsed = JSON.parse(line) as { ticket?: unknown; results?: unknown; error?: unknown };
         } catch {
           socket.destroy();
           reject(new Error('invalid response from IDE prompter'));
+          return;
+        }
+        // A null ticket carrying an error is the extension refusing the
+        // connection outright (bad or missing token). Fail fast instead of
+        // falling through to the ticket-mismatch guard below, which would sit
+        // here waiting for a reply that never comes.
+        if (parsed.ticket === null && typeof parsed.error === 'string') {
+          socket.destroy();
+          reject(new Error(`IDE prompter rejected the request: ${parsed.error}`));
           return;
         }
         if (parsed.ticket !== req.ticket || !Array.isArray(parsed.results)) {
@@ -119,7 +175,11 @@ export class IdePrompter {
         socket.destroy();
         reject(err);
       });
-      socket.write(`${JSON.stringify({ type: 'prompt', ...req } as { type: string } & PromptRequest)}\n`);
+      // The shared token authenticates the request line; without it the
+      // extension answers {ticket: null, error: 'unauthenticated'}. cancel()
+      // deliberately stays token-less — the extension closes those
+      // connections without answering.
+      socket.write(`${JSON.stringify({ type: 'prompt', token, ...req })}\n`);
     });
   }
 }

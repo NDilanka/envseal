@@ -10,6 +10,13 @@ import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters
  * set BOTH `ENVSEAL_TEST_MODE=1` and `ENVSEAL_TEST_PROMPTER_VALUE`. Neither is ever
  * set by the shipped CLI, and nothing in the published package sets them for you.
  *
+ * Since confirmations are asked on the selected prompter too (see confirm.ts),
+ * this stub also answers them: `ENVSEAL_TEST_PROMPTER_VALUE=yes` approves every
+ * env_use and every non-allowlisted verify probe, and any other value denies
+ * them. That widens the same double-gated hole rather than opening a second
+ * one, and it is what lets the env_use tests drive a real approval and a real
+ * denial against the shipped binary.
+ *
  * If you are reading this because you want to inject a value programmatically in
  * production: don't. Use a sink the value already lives in (keychain, vault) and let
  * `presence` resolve it. Injecting through the prompter path would put the value in

@@ -15,9 +15,15 @@
     "envseal-mcp": "./dist/bin.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
+    "prepublishOnly": "node ../../scripts/release-guard.mjs",
     "build": "tsc -p tsconfig.json && pnpm gen:dialects",
     "gen:dialects": "tsx scripts/gen-dialects.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -3,16 +3,23 @@ import * as node_crypto from 'node:crypto';
 import * as node_fs from 'node:fs';
 import * as node_os from 'node:os';
 import * as node_path from 'node:path';
-import { findProjectRoot } from '@envseal/core';
 import { Broker } from '@envseal/core';
-import { dispatch } from '@envseal/sdk';
-import { INPUT_SCHEMAS, isSepError } from '@envseal/protocol';
+import { createProbeApproval, createUseConfirm, dispatch, isSepToolName } from '@envseal/sdk';
+import type { Prompter } from '@envseal/prompters';
+import { selectPrompter } from '@envseal/prompters';
 import { generateOpenAPI } from './openapi.js';
 
 export interface HttpServerOptions {
   root: string;
   port?: number;
   token?: string;
+  /**
+   * Surface used to ask the user for env_use confirmation and for consent
+   * before a non-allowlisted verify probe. Defaults to selectPrompter(), which
+   * resolves to `none` in CI -- there those two operations fail with
+   * SEP_NO_INTERACTIVE_SURFACE rather than running unattended.
+   */
+  prompter?: Prompter;
 }
 
 interface StartResult {
@@ -54,7 +61,19 @@ export async function startHttpServer(
   opts: HttpServerOptions,
 ): Promise<StartResult> {
   const token = await getOrCreateToken(opts.token);
-  const broker = new Broker({ root: opts.root });
+
+  const prompter = opts.prompter ?? (await selectPrompter());
+  const surface = { projectRoot: opts.root, prompter: async (): Promise<Prompter> => prompter };
+  const broker = new Broker({
+    root: opts.root,
+    prompter,
+    // /v1/env_use is in the OpenAPI document. Without onConfirm the broker has
+    // no way to ask anyone, and exec.ts reports the missing callback as "the
+    // user denied the confirmation" for a user who was never asked.
+    onConfirm: createUseConfirm(surface),
+    // PLAN.md §6.4 probe consent, supplied by no binding before this.
+    onApprovalNeeded: createProbeApproval(surface),
+  });
 
   let server: node_http.Server | null = null;
   let actualPort = 0;
@@ -85,8 +104,16 @@ export async function startHttpServer(
       return;
     }
 
-    // Reject requests with Origin header (CORS defense)
-    if (req.headers.origin) {
+    // Reject requests carrying an Origin header at all (CORS defense).
+    //
+    // Deliberately stricter than the loopback prompter, which must accept the
+    // `Origin: null` a real browser sends on its own form post. Nothing here is
+    // ever fetched by a browser page, so any Origin is a browser reaching a
+    // surface it has no business on.
+    //
+    // `!== undefined`, not truthiness: `Origin:` with an empty value is a
+    // present header, and the old check let it straight through (W3-06).
+    if (req.headers.origin !== undefined) {
       res.writeHead(400);
       res.end(
         JSON.stringify({
@@ -189,6 +216,24 @@ export async function startHttpServer(
     }
 
     const operationName = match[1];
+
+    // An unknown operation is a routing failure, not a result. It used to reach
+    // dispatch(), which answered with an error body under HTTP 200 -- so a
+    // client saw success for an endpoint that does not exist (F32). Checked
+    // after auth so an unauthenticated caller cannot map the route table.
+    if (!isSepToolName(operationName)) {
+      res.writeHead(404);
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 'SEP_UNKNOWN_KEY',
+            userMessage: `Unknown operation: ${operationName}`,
+            retriable: false,
+          },
+        }),
+      );
+      return;
+    }
 
     // Read and validate body
     const chunks: Buffer[] = [];

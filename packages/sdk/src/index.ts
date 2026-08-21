@@ -1,6 +1,7 @@
 import { findProjectRoot } from '@envseal/core';
 import { Broker, type BrokerOptions } from '@envseal/core';
 import type { Prompter } from '@envseal/prompters';
+import { selectPrompter } from '@envseal/prompters';
 import {
   SEP_TOOL_NAMES,
   INPUT_SCHEMAS,
@@ -9,6 +10,7 @@ import {
   isSepError,
 } from '@envseal/protocol';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { annotateVerifyResults, createProbeApproval, createUseConfirm } from './confirm.js';
 
 export interface CreateBrokerOptions {
   root?: string;
@@ -17,8 +19,35 @@ export interface CreateBrokerOptions {
 
 export function createBroker(opts?: CreateBrokerOptions): Broker {
   const root = opts?.root ?? findProjectRoot(process.cwd());
-  const brokerOpts: BrokerOptions = { root, prompter: opts?.prompter };
+
+  // Resolved lazily and memoised: `selectPrompter()` is async and this factory
+  // is not, and the surface is only needed if someone actually calls env_use or
+  // trips a non-allowlisted probe. `selectPrompter` hands back process-wide
+  // singletons, so this is the same instance the Broker resolves for
+  // env_request value entry.
+  let surfacePromise: Promise<Prompter> | null = null;
+  const prompter = (): Promise<Prompter> => {
+    const injected = opts?.prompter;
+    surfacePromise ??= injected === undefined ? selectPrompter() : Promise.resolve(injected);
+    return surfacePromise;
+  };
+  const surface = { projectRoot: root, prompter };
+
+  const brokerOpts: BrokerOptions = {
+    root,
+    prompter: opts?.prompter,
+    // Without these two the broker has no way to ask a human, and exec.ts
+    // reports the absent callback as SEP_CONFIRMATION_DENIED — blaming a user
+    // who was never asked. See confirm.ts.
+    onConfirm: createUseConfirm(surface),
+    onApprovalNeeded: createProbeApproval(surface),
+  };
   return new Broker(brokerOpts);
+}
+
+/** True for the seven SEP/1 tool names. Exported so a transport can 404 an unknown route. */
+export function isSepToolName(name: string): name is keyof typeof INPUT_SCHEMAS {
+  return Object.prototype.hasOwnProperty.call(INPUT_SCHEMAS, name);
 }
 
 export type Dialect = 'openai' | 'anthropic' | 'gemini';
@@ -156,9 +185,7 @@ export async function dispatch(
 ): Promise<unknown> {
   // Narrow `name` to the tool-name union up front so the switch below can be
   // checked for exhaustiveness rather than falling through at runtime.
-  const isToolName = (n: string): n is keyof typeof INPUT_SCHEMAS =>
-    Object.prototype.hasOwnProperty.call(INPUT_SCHEMAS, n);
-  if (!isToolName(name)) {
+  if (!isSepToolName(name)) {
     return {
       error: {
         code: 'SEP_UNKNOWN_KEY',
@@ -199,7 +226,11 @@ export async function dispatch(
       case 'env_await':
         return await broker.await(validated as Parameters<Broker['await']>[0]);
       case 'env_verify':
-        return await broker.verify(validated as Parameters<Broker['verify']>[0]);
+        // `probe_not_approved` alone names a host and nothing the caller can
+        // act on. See annotateVerifyResults.
+        return annotateVerifyResults(
+          await broker.verify(validated as Parameters<Broker['verify']>[0]),
+        );
       case 'env_use':
         return await broker.use(validated as Parameters<Broker['use']>[0]);
       case 'env_revoke':
@@ -227,10 +258,32 @@ export async function dispatch(
       };
     }
 
+    // Everything below is NOT a SepError, so its message is uncurated and may
+    // embed a value or a filesystem path. W2 swept 22 HTTP exchanges and found
+    // zero body leaks; surfacing `error.message` here is exactly how that
+    // property would be lost. Zod is the concrete case: `invalid_enum_value`
+    // quotes the value it received, which for a mis-typed argument is the
+    // secret itself. So: report the real *kind* of failure, never its text.
+    //
+    // Detected structurally rather than with `instanceof ZodError` because zod
+    // reaches this package only as a transitive dependency of @envseal/protocol.
+    if (error instanceof Error && error.name === 'ZodError') {
+      return {
+        error: {
+          code: 'SEP_FORMAT_INVALID',
+          userMessage:
+            `Arguments did not match the input schema for ${name}. Re-read that tool's inputSchema ` +
+            'and call it again. The offending values are not echoed back because they may contain a secret.',
+          retriable: true,
+        },
+      };
+    }
+
     return {
       error: {
-        code: 'SEP_UNKNOWN_KEY',
-        userMessage: 'An error occurred',
+        code: 'SEP_INTERNAL',
+        userMessage:
+          'An internal error occurred. Details were suppressed because they may contain sensitive information.',
         retriable: false,
       },
     };
@@ -238,3 +291,11 @@ export async function dispatch(
 }
 
 export { SEP_TOOL_NAMES } from '@envseal/protocol';
+export {
+  createUseConfirm,
+  createProbeApproval,
+  annotateVerifyResults,
+  CONFIRM_KEY_USE,
+  CONFIRM_KEY_PROBE,
+} from './confirm.js';
+export type { ConfirmSurface } from './confirm.js';

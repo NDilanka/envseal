@@ -3,7 +3,39 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startHttpServer } from '../src/server.js';
+import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters';
+import { secretFromUtf8 } from '@envseal/protocol';
 import * as http from 'node:http';
+
+/**
+ * A prompter that answers confirmations without any UI. Without it the server
+ * falls back to selectPrompter(), which off CI resolves to loopback-browser —
+ * so the env_use / env_verify exchanges below would open a real listener and
+ * wait for a browser that never comes.
+ *
+ * The env_use confirmation is approved so the child actually runs and its
+ * stdout (which echoes the sentinel) must come back redacted — the strongest
+ * leak assertion in this file. Everything else is denied with an empty box,
+ * which keeps env_verify fail-closed against its non-allowlisted host with no
+ * network call at all.
+ */
+function hermeticPrompter(): Prompter {
+  return {
+    id: 'ide',
+    available: async () => true,
+    prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+      ticket: req.ticket,
+      results: req.keys.map((k) => ({
+        key: k.key,
+        outcome: 'entered' as const,
+        value: secretFromUtf8(k.key === 'APPROVE' ? 'yes' : ''),
+      })),
+    }),
+    cancel: async () => {
+      /* nothing to tear down */
+    },
+  };
+}
 
 describe('HTTP Server Contract', () => {
   let serverCloseFunc: (() => Promise<void>) | null = null;
@@ -260,7 +292,11 @@ describe('HTTP Server Contract', () => {
       'utf8',
     );
 
-    const result = await startHttpServer({ root: testRoot, token: 'test-token-12345' });
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+      prompter: hermeticPrompter(),
+    });
     serverCloseFunc = result.close;
     const auth = { Authorization: `Bearer ${result.token}` };
     const post = (path: string, body: unknown) =>

@@ -21,7 +21,7 @@ export interface LoopbackResult extends PromptResponse {
   url?: string;
 }
 
-interface LoopbackPrompterOptions {
+export interface LoopbackPrompterOptions {
   openBrowser?: boolean;
   onListening?: (info: { port: number; pathNonce: string; url: string }) => void;
 }
@@ -101,11 +101,17 @@ function renderKeySection(key: PromptKeyRequest): string {
       `      <label class="skip"><input type="checkbox" ` +
       `name="${escapeHtml(SKIP_FIELD(key.key))}" value="1"> Skip this key</label>\n`;
   }
-  return `    <section class="key" id="${sectionId}">
+  // W3-01: these two attributes are the only place a key name reaches the page
+  // without escapeHtml. Unreachable through the product path today (the
+  // manifest's zod key pattern is /^[A-Z][A-Z0-9_]{0,63}$/) and contained by
+  // the nonce-only CSP, but this is the one file that renders
+  // attacker-influenced strings next to a live credential field, so the
+  // escaping contract holds without exception.
+  return `    <section class="key" id="${escapeHtml(sectionId)}">
       <h2>${escapeHtml(key.key)}</h2>
       <p class="description">${escapeHtml(key.description)}</p>
 ${provider}${hint}${signup}${docs}      <div class="input-row">
-        <input type="password" name="${escapeHtml(VALUE_FIELD(key.key))}" id="${revealId}"
+        <input type="password" name="${escapeHtml(VALUE_FIELD(key.key))}" id="${escapeHtml(revealId)}"
           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
           data-1p-ignore data-lpignore="true" placeholder="Enter value">
         <button type="button" data-reveal="${escapeHtml(revealId)}">Show</button>

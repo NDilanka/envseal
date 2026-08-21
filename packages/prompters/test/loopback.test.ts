@@ -235,6 +235,70 @@ describe('loopback-browser prompter', () => {
     toCleanup = null;
   });
 
+  // W3-03 caveat. The two tests above drive the *exact-match* branch of the
+  // Origin rule, which a real browser never reaches: this page sets
+  // `Referrer-Policy: no-referrer`, so Chrome sends `Origin: null` on the form
+  // POST. Without this test the branch the product actually depends on is
+  // covered by nothing, and the rule is guarded only in a shape no browser
+  // produces.
+  it('completes a full round trip when the browser sends Origin: null', async () => {
+    const prompter = new LoopbackPrompter();
+    const result = await startPrompt(prompter);
+
+    const page = await request(result.url.href, { headers: { origin: 'null' } });
+    expect(page.statusCode).toBe(200);
+    const html = await page.body.text();
+    expect(html).toContain('<form method="post"');
+    const csrf = parseCsrf(html);
+
+    const res = await request(result.url.href, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'null',
+      },
+      body: new URLSearchParams({
+        csrf,
+        'env_value.OPENAI_API_KEY': 'sk-null-origin-submit',
+      }).toString(),
+    });
+    expect(res.statusCode).toBe(200);
+
+    const outcome = await result.result;
+    const entry = outcome.results.find((r) => r.key === 'OPENAI_API_KEY');
+    expect(entry?.outcome).toBe('entered');
+    expect(entry?.value?.toString('utf8')).toBe('sk-null-origin-submit');
+    toCleanup = null;
+  });
+
+  // W3-01. Every other interpolation on this page goes through escapeHtml;
+  // `id="field-${key}"` and `id="reveal-${key}"` did not, so a key name could
+  // close the attribute and the tag. Unreachable through the manifest today,
+  // but this is the page that renders attacker-influenced strings next to a
+  // live credential field.
+  it('escapes a hostile key name in the id="" attributes', async () => {
+    const hostile = 'A"><img src=x onerror=alert(1)>';
+    const result = await startPrompt(new LoopbackPrompter(), {
+      keys: [{ key: hostile, description: 'hostile key name' }],
+    });
+    try {
+      const html = await fetchPage(result.url);
+      // The tag must still be a well-formed <section ... id="..."> whose
+      // attribute value contains no raw quote, and no <img> may exist anywhere.
+      const section = /<section class="key" id="([^"]*)">/.exec(html);
+      expect(section).not.toBeNull();
+      expect(section?.[1]).toBe('field-A&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
+      expect(html).not.toContain('<img');
+      expect(html).not.toContain('onerror=alert(1)>');
+      const reveal = /<input type="password" name="[^"]*" id="([^"]*)"/.exec(html);
+      expect(reveal?.[1]).toBe('reveal-A&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
+    } finally {
+      await toCleanup?.prompter.cancel(toCleanup.ticket);
+    }
+    await result.result;
+    await expectPortClosed(Number(result.url.port), 1000);
+  });
+
   it('serves the form with the display nonce and an escaped reason', async () => {
     const result = await startPrompt(new LoopbackPrompter(), {
       reason: 'Test with <script>alert(1)</script> injection',

@@ -1020,7 +1020,7 @@ ever seeing it."* Then the threat model summary, then install.
 Check the `envseal` name on npm before publishing; if taken, pick an alternative and rename in one
 pass (package names, bin name, config dir `.envseal/`, env prefix `SEP_`, docs, the `secret-ref://`
 scheme authority). Publish `0.1.0` under Apache-2.0 with provenance attestation
-(`npm publish --provenance`).
+(`pnpm release` from CI — `npm publish` ships `workspace:*` verbatim; see docs/publishing.md).
 
 ---
 

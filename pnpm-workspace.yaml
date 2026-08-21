@@ -2,6 +2,9 @@ packages:
   - 'packages/*'
   - 'plugins/*'
   - 'extensions/*'
-  - 'examples/*'
+  # There is no top-level examples/ directory; the sample agent lives at
+  # packages/examples/custom-agent and is not a workspace package. Do not add
+  # 'packages/examples/*' until that sample compiles against the current SDK surface --
+  # it currently does not, and adding it turns `pnpm -r build` red. See docs/publishing.md.
 allowBuilds:
   esbuild: true

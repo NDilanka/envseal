@@ -183,6 +183,43 @@ discoveries.
 M4 is the highest-value gate: it is the only end-to-end test of the actual product experience,
 and PLAN T8.4 requires grepping the on-disk session transcript for the sentinel.
 
+### 5.1 Automation status per gate (2026-08-21)
+
+What could be driven without a human at a console/browser was driven, against built artifacts;
+what cannot be is listed as a runbook step, not claimed.
+
+- **M1 — CLOSED** (prior session): loopback consent page loaded in real Chrome, canary
+  round-tripped (`matchedSentinel: true`), listener refused connections afterward.
+- **M2 — mechanism verified, typed entry human-only.** `scripts/probe-m2-native.mjs` verifies
+  against `packages/prompters/dist`: (1) the real `NativePrompter` maps a closed stdin to
+  `cancelled`; (2) the adapter's exact PowerShell template fails CLOSED under redirected stdin
+  (empty output, promptly — `Read-Host -AsSecureString` reads the console input buffer, not a
+  pipe, so no pipe harness can type into it); (3) full binary `envseal set` under
+  `SEP_PREFER_NATIVE=1` resolves to `outcome=cancelled`, exit 3, writes nothing; (4) no temp
+  `.ps1` left behind. **Runbook (human):** in a real interactive PowerShell console run
+  `SEP_PREFER_NATIVE=1 envseal set <KEY>`; confirm the input is masked while typing, that
+  Enter stores the value, and that Ctrl+C/empty Enter yields `cancelled` (exit 3), not a crash.
+- **M3 — write leg verified live; resolution leg impossible by design.**
+  `scripts/probe-m3-keychain.mjs` stores through the real Broker into a `sink: keychain`
+  entry and asserts: DPAPI blob at `%LOCALAPPDATA%\envseal\creds\<KEY>` is non-empty hex,
+  decrypts back to the canary exactly (DPAPI round-trip), nothing reaches `.env`, and
+  `envseal run --` leaves the child without the value (`UNRESOLVED`). The gate AS WRITTEN
+  ("value retrievable") cannot pass: the sink is write-only (`read()` returns null) — recorded
+  as the documented limitation, not forced. Related honesty gap found by the probe and now
+  documented in `docs/cli-contract.md` + `docs/residual-risks.md`: presence checks consult
+  only env/`.env`, so keychain entries always report `present: false` and `ensure` re-prompts.
+- **M4 — see §6 evidence row.** Automated artifact-level: headless `claude -p` session with
+  `--plugin-dir plugins/claude-code` against a canary `.env`, transcript grepped for both
+  sentinels; plus `scripts/probe-m4-hook-contract.mjs` (18/18) and the plugin contract tests
+  over built bundles. Human-only remainder: watching `env_request` open a real consent prompt
+  interactively.
+- **M5 — wire contract verified, in-editor load human-only.** The broker↔extension socket
+  protocol (shared `~/.envseal/ide-token`, one-JSON-line framing, unauthenticated fast-fail)
+  is exercised over a real named pipe by `packages/prompters/test/ide.test.ts`. **Runbook
+  (human):** `code --extensions-dir` / load `extensions/vscode` via Extension Development Host,
+  trigger `envseal set`, confirm the password input box shows nonce + reason and the value
+  reaches the broker.
+
 ---
 
 ## 6. Sign-off

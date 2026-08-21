@@ -25,7 +25,7 @@ the broker will:
 The middle ground — structural guarantees at the protocol level plus UX barriers at the execution level — is what envseal provides. But those UX barriers can be overridden by user choice, and that is not a bug. It is the price of remaining useful.
 
 **Mitigation:** 
-- Recommend the `keychain` sink so values stay out of `.env` (write-only today — it cannot resolve a stored value back; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
+- Recommend the `keychain` sink so values stay out of `.env` (write-only today — it cannot resolve a stored value back, presence checks cannot see a stored value so `status` reports such keys absent and `ensure` re-prompts for them; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
 - Use command allowlists to pre-approve safe commands
 - Educate users: understand what code you approve
 - Use this only with agents you trust

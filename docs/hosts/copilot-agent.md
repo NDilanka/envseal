@@ -35,11 +35,17 @@ VS Code `settings.json`:
 And, for every Copilot surface, add the instruction file
 (`plugins/generic/AGENTS.md`) to your project root — Copilot reads `AGENTS.md`
 by default. This is the advisory layer that makes Copilot defensibly `B`.
+Note that envseal's detector has no Copilot-specific branch: `envseal doctor`
+reports `Host: Generic Agent (Tier B)` (via the `AGENTS.md` file above), not
+"Copilot".
 
 ## Keychain recommendation (Tier B)
 
 Copilot cannot stop a shell command from leaking a value. Set the `keychain`
-sink so `.env` holds only a `secret-ref://envseal/...` reference:
+sink to keep the value out of `.env` entirely: it is stored in the OS-backed
+store and nothing is written to `.env`, not even a reference. Note the sink is
+write-only today — `envseal run` cannot yet resolve a keychain-stored value
+back — so use `dotenv` for keys a command must actually receive:
 
 ```jsonc
 {
@@ -52,5 +58,7 @@ sink so `.env` holds only a `secret-ref://envseal/...` reference:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references. On Tier B prefer keychain unless you need plaintext.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command needs plaintext.

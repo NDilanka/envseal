@@ -8,6 +8,12 @@
 
 Zed is **Tier B**: it speaks MCP but has no interception hooks.
 
+One caveat: envseal's detector does not recognize Zed's marker files yet, so
+`envseal doctor` reports `Host: Unknown Host (Tier C)`. The Tier B label
+describes what the protocol binding provides on Zed (MCP plus advisory
+instructions), not what doctor prints today — run `envseal doctor` after setup
+to verify your actual tier.
+
 `[VERIFY: Zed's MCP config has changed between versions — older builds used a
 `mcp` block in `settings.json`, newer ones moved toward a dedicated
 `mcp` JSON file / `Zed > Settings > MCP`. Verify the key shape below against
@@ -33,7 +39,10 @@ Restart Zed, confirm the server under `MCP`, then run `envseal doctor`.
 ## Keychain recommendation (Tier B)
 
 Zed cannot stop a shell command from leaking a value. Set the `keychain`
-sink so `.env` holds only a `secret-ref://envseal/...` reference:
+sink to keep the value out of `.env` entirely: it is stored in the OS-backed
+store and nothing is written to `.env`, not even a reference. Note the sink is
+write-only today — `envseal run` cannot yet resolve a keychain-stored value
+back — so use `dotenv` for keys a command must actually receive:
 
 ```jsonc
 {
@@ -46,5 +55,7 @@ sink so `.env` holds only a `secret-ref://envseal/...` reference:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references. On Tier B prefer keychain unless you need plaintext.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command needs plaintext.

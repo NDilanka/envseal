@@ -10,6 +10,12 @@ JetBrains IDEs (IntelliJ, PyCharm, etc.) are **Tier B**: their built-in MCP
 client exposes the seven tools, but nothing intercepts a shell command that
 leaks a value.
 
+One caveat: envseal's detector does not recognize JetBrains IDEs' marker files
+yet, so `envseal doctor` reports `Host: Unknown Host (Tier C)`. The Tier B
+label describes what the protocol binding provides on these IDEs (MCP client
+plus advisory settings), not what doctor prints today — run `envseal doctor`
+after setup to verify your actual tier.
+
 `[VERIFY: JetBrains MCP config location/format varies by product and version —
 project `.idea/mcp.json`, the shared `mcpServers` layout in IDE settings, and a
 `.mcp.json` at the project root have all shipped across builds. Use the IDE's
@@ -36,7 +42,10 @@ list, then run `envseal doctor`.
 ## Keychain recommendation (Tier B)
 
 JetBrains cannot stop a shell command from leaking a value. Set the `keychain`
-sink so `.env` holds only a `secret-ref://envseal/...` reference:
+sink to keep the value out of `.env` entirely: it is stored in the OS-backed
+store and nothing is written to `.env`, not even a reference. Note the sink is
+write-only today — `envseal run` cannot yet resolve a keychain-stored value
+back — so use `dotenv` for keys a command must actually receive:
 
 ```jsonc
 {
@@ -49,5 +58,7 @@ sink so `.env` holds only a `secret-ref://envseal/...` reference:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references. On Tier B prefer keychain unless you need plaintext.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command needs plaintext.

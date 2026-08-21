@@ -35,13 +35,18 @@ mkdir -p .windsurf
 ```
 
 Restart Windsurf, then confirm the server appears under MCP and run
-`envseal doctor` — it should report `Host: unknown` or a detected host; either
-way verify the tier your rules actually provide.
+`envseal doctor`. envseal's detector does not recognize Windsurf's marker files
+yet, so it reports `Host: Unknown Host (Tier C)`; the Tier B label describes
+what the protocol binding provides on Windsurf (MCP plus advisory rules), not
+what doctor prints today.
 
 ## Keychain recommendation (Tier B)
 
 Windsurf cannot stop a shell command from leaking a value. Set the `keychain`
-sink so `.env` holds only a `secret-ref://envseal/...` reference:
+sink to keep the value out of `.env` entirely: it is stored in the OS-backed
+store and nothing is written to `.env`, not even a reference. Note the sink is
+write-only today — `envseal run` cannot yet resolve a keychain-stored value
+back — so use `dotenv` for keys a command must actually receive:
 
 ```jsonc
 {
@@ -54,6 +59,7 @@ sink so `.env` holds only a `secret-ref://envseal/...` reference:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`. Tools that read `.env` directly
-cannot resolve references; on Tier B prefer keychain unless you need plaintext
-for other tooling.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command — or other tooling that reads `.env` — needs the value.

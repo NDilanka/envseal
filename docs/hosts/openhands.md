@@ -3,13 +3,15 @@
 | | |
 |---|---|
 | **Binding tier** | 4 — CLI contract (`envseal` subcommands) |
-| **Protection tier** | **C** — protocol only |
+| **Protection tier** | **B** — protocol + advisory guardrails |
 | **Config file** | `AGENTS.md` (via `plugins/generic/AGENTS.md`) + terminal tool |
 
 OpenHands runs agents in a sandboxed environment; whether the `envseal` binary
 is reachable inside that environment is a deployment decision, and interactive
 prompts (`ensure`) need a way to reach the user's terminal. This makes the
-integration **Tier C** and deployment-dependent.
+integration **Tier B** and deployment-dependent. Because these setups place
+`AGENTS.md` at the project root, `envseal doctor` reports
+`Host: Generic Agent (Tier B)`.
 
 `[VERIFY: OpenHands runtime/sandbox and terminal-tool configuration differ
 across versions and deployments. Confirm where the agent executes commands
@@ -38,10 +40,13 @@ envseal verify            # classified verification results
 envseal doctor --json     # host + tier + config health
 ```
 
-## Keychain recommendation (Tier C)
+## Keychain recommendation (Tier B)
 
-Prefer the `keychain` sink so `.env` holds only a `secret-ref://envseal/...`
-reference and no plaintext touches disk:
+Prefer the `keychain` sink so no plaintext touches disk: the value goes to the
+OS-backed store and nothing is written to `.env` — not even a reference. Note
+the sink is write-only today: it stores the value, but `envseal run` cannot yet
+resolve a keychain-stored value back, so use `dotenv` for keys a command must
+actually receive:
 
 ```jsonc
 {
@@ -54,5 +59,5 @@ reference and no plaintext touches disk:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve.

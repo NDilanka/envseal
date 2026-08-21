@@ -18,20 +18,35 @@ before relying on them.
 | copilot-agent | 1 (MCP) | **B** | `github.copilot.mcp` VS Code setting `[VERIFY]` |
 | jetbrains | 1 (MCP) | **B** | `.idea/mcp.json` `[VERIFY]` |
 | aider | 4 (CLI) | **C** | `.aider.conf.yml` + `/run` |
-| openhands | 4 (CLI) | **C** | `AGENTS.md` + terminal tool `[VERIFY]` |
-| shell-agent | 4 (CLI) | **C** | `AGENTS.md` / shell recipe |
+| openhands | 4 (CLI) | **B** | `AGENTS.md` + terminal tool `[VERIFY]` |
+| shell-agent | 4 (CLI) | **B** | `AGENTS.md` / shell recipe |
+
+> **What `envseal doctor` actually detects:** only claude-code, cursor,
+> continue, and aider are identified by name. claude-code reports Tier A only
+> with visible hook wiring (envseal hooks in `.claude/settings.json`, or the
+> plugin copied to `.claude/plugins/envseal/`); otherwise Tier B. continue is
+> detected as Tier B only with a `.continue/` directory at the *project* root —
+> a global `~/.continue/config.yaml` alone reports `Unknown Host (Tier C)`.
+> Every other host here — windsurf, cline, zed, codex, goose, copilot-agent,
+> jetbrains, openhands, shell-agent — is not detected by name: doctor reports
+> `Unknown Host (Tier C)`, or `Generic Agent (Tier B)` when an `AGENTS.md` is
+> present at the root. The Protection tier column describes what each host's
+> documented setup achieves, not what doctor prints for it.
 
 ## Tiers
 
 | Tier | Meaning | Hosts |
 |---|---|---|
 | **A** | protocol + interception hooks (tool-call and user-message filtering) | claude-code |
-| **B** | protocol + advisory guardrails (rules file, docs, pre-commit) | cursor, continue, windsurf, cline, zed, codex, copilot-agent, jetbrains |
-| **C** | protocol only | goose, aider, openhands, shell-agent |
+| **B** | protocol + advisory guardrails (rules file, docs, pre-commit) | cursor, continue, windsurf, cline, zed, codex, copilot-agent, jetbrains, openhands, shell-agent |
+| **C** | protocol only | goose, aider |
 
 On **B** and **C** a shell command can still exfiltrate a value. The docs for
-those hosts recommend the `keychain` sink so `.env` holds only
-`secret-ref://envseal/...` references and no plaintext touches disk.
+those hosts recommend the `keychain` sink so no plaintext touches disk — the
+value goes to the OS-backed store and nothing is written to `.env`. Note the
+keychain sink is write-only today: it stores the value, but `envseal run`
+cannot yet resolve a keychain-stored value back, so use `dotenv` if the command
+needs the value.
 
 ## MCP server command
 

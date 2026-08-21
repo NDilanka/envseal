@@ -37,8 +37,11 @@ Restart Cursor, then `Settings → MCP` should show `envseal-mcp` connected.
 ## Keychain recommendation (Tier B)
 
 A Tier B host cannot stop a shell command from leaking a value. Set the
-`keychain` sink so `.env` holds only a `secret-ref://envseal/...` reference and
-plaintext never touches disk:
+`keychain` sink so plaintext never touches disk: the value goes to the OS-backed
+store and nothing is written to `.env` — not even a reference. Note the sink is
+write-only today: it stores the value, but `envseal run` cannot yet resolve a
+keychain-stored value back, so use `dotenv` for keys a command must actually
+receive:
 
 ```jsonc
 {
@@ -51,6 +54,7 @@ plaintext never touches disk:
 }
 ```
 
-References resolve when a command runs through `envseal run -- <cmd>`. Tools
-that read `.env` directly (Docker Compose, Next.js, Vite) cannot resolve
-references; on Cursor the leak risk usually outweighs that convenience.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve — and the
+only thing tools that read `.env` directly (Docker Compose, Next.js, Vite) will
+ever see. On Cursor the leak risk usually outweighs that convenience.

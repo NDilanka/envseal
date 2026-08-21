@@ -41,8 +41,11 @@ secret values inside Aider.
 
 ## Keychain recommendation (Tier C)
 
-Tier C has no guardrails. Prefer the `keychain` sink so `.env` holds only a
-`secret-ref://envseal/...` reference:
+Tier C has no guardrails. Prefer the `keychain` sink to keep the value out of
+`.env` entirely: it is stored in the OS-backed store and nothing is written to
+`.env`, not even a reference. Note the sink is write-only today — `envseal run`
+cannot yet resolve a keychain-stored value back — so use `dotenv` for keys a
+command must actually receive:
 
 ```jsonc
 {
@@ -55,6 +58,7 @@ Tier C has no guardrails. Prefer the `keychain` sink so `.env` holds only a
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references. On Aider the keychain sink is the default
-recommendation.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Aider
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command needs the value.

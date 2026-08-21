@@ -31,12 +31,17 @@ mcp:
       cmd: envseal-mcp
 ```
 
-Confirm the tools appear in the session, then run `envseal doctor`.
+Confirm the tools appear in the session, then run `envseal doctor` — expect
+`Unknown Host (Tier C)`: there is no goose-specific detection, so it will not
+report "goose".
 
 ## Keychain recommendation (Tier C)
 
-Tier C has no guardrails at all. Prefer the `keychain` sink so `.env` holds
-only a `secret-ref://envseal/...` reference and no plaintext touches disk:
+Tier C has no guardrails at all. Prefer the `keychain` sink so no plaintext
+touches disk: the value goes to the OS-backed store and nothing is written to
+`.env` — not even a reference. Note the sink is write-only today: it stores the
+value, but `envseal run` cannot yet resolve a keychain-stored value back, so use
+`dotenv` for keys a command must actually receive:
 
 ```jsonc
 {
@@ -49,6 +54,7 @@ only a `secret-ref://envseal/...` reference and no plaintext touches disk:
 }
 ```
 
-Values are resolved by `envseal run -- <cmd>`; tools that read `.env` directly
-cannot resolve references. On Tier C the keychain sink is the default
-recommendation.
+The `sink: "keychain"` entry above is valid and stores the value; until
+read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier C
+prefer keychain for high-value keys you want off disk, and dotenv when the
+command needs the value.

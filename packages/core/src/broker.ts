@@ -34,6 +34,7 @@ import { runWithSecrets } from './exec.js';
 import type { ExecOptions } from './exec.js';
 import { getSink } from './sinks/registry.js';
 import { getValidation, recordValidation } from './validation-state.js';
+import { scanText, secretInRequestError } from './guard.js';
 
 const LENGTH_BUCKETS = ['<8', '8-16', '16-32', '32-48', '48-64', '64-128', '128+'] as const;
 
@@ -194,6 +195,22 @@ export class Broker {
   }
 
   async request(input: EnvRequestInput): Promise<Ticket> {
+    // Before the manifest is even read: `reason` is free text that goes
+    // verbatim into .envseal/audit.jsonl, which §4.1 says holds names only. A
+    // credential pasted there must not mint a ticket, reach the prompter, or
+    // appear in a log line — so nothing above this point may have a side effect.
+    // `keys` is not scanned here; every key has already been through the
+    // declare-time guard, and an undeclared one throws below.
+    const reasonFinding = scanText('reason', input.reason, 'strict');
+    if (reasonFinding !== null) {
+      appendAudit(this.paths, {
+        type: 'blocked',
+        reason: 'secret_in_request',
+        detail: `${reasonFinding.path}: ${reasonFinding.label}`,
+      });
+      throw secretInRequestError(reasonFinding);
+    }
+
     const manifest = loadManifest(this.paths) ?? emptyManifest();
     const declaredKeys = new Set(manifest.entries.map((e) => e.key));
 

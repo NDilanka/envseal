@@ -5,6 +5,8 @@ import type { FormattingOptions, ParseError } from 'jsonc-parser';
 import { DeclareResult, Manifest, ManifestEntry, SepError } from '@envseal/protocol';
 import type { Manifest as ManifestType } from '@envseal/protocol';
 import type { ProjectPaths } from './paths.js';
+import { appendAudit } from './audit.js';
+import { scanManifestEntry, secretInDeclarationError } from './guard.js';
 
 export function emptyManifest(): ManifestType {
   return { version: 1, entries: [] };
@@ -115,10 +117,16 @@ export function saveManifest(paths: ProjectPaths, manifest: ManifestType): void 
   writeFileSync(paths.manifest, out);
 }
 
+/**
+ * Every write to `env.schema.jsonc` funnels through here — `Broker.declare` and
+ * the CLI's `init` both call it — so this is where the secret-shaped-input
+ * guard belongs. Placing it in `Broker.declare` alone would leave `envseal init`
+ * unguarded, and placing it after `saveManifest` would be no guard at all.
+ */
 export function declareEntries(paths: ProjectPaths, entries: unknown[]): DeclareResult {
   const manifest = loadManifest(paths) ?? emptyManifest();
   const parsedEntries: ManifestType['entries'] = [];
-  for (const raw of entries) {
+  for (const [index, raw] of entries.entries()) {
     const result = ManifestEntry.safeParse(raw);
     if (!result.success) {
       const hasUnrecognized = result.error.issues.some((issue) => issue.code === 'unrecognized_keys');
@@ -126,6 +134,18 @@ export function declareEntries(paths: ProjectPaths, entries: unknown[]): Declare
         code: hasUnrecognized ? 'SEP_VALUE_IN_REQUEST' : 'SEP_FORMAT_INVALID',
         details: result.error.flatten(),
       });
+    }
+    const finding = scanManifestEntry(result.data, `entries[${index}]`);
+    if (finding !== null) {
+      // §2.2 T3 wants the rejection logged as well as surfaced. The record
+      // carries the field path and the pattern label — never the text that
+      // matched, which is the whole reason we are refusing the write.
+      appendAudit(paths, {
+        type: 'blocked',
+        reason: 'secret_in_declaration',
+        detail: `${finding.path}: ${finding.label}`,
+      });
+      throw secretInDeclarationError(finding);
     }
     parsedEntries.push(result.data);
   }

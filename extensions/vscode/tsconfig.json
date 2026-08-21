@@ -1,6 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // The VS Code extension host resolves the manifest `main` with `require`.
+    // It has no ESM loader, so an ESM entry point throws at activation. The
+    // base config's NodeNext is correct for every other package here and must
+    // not change; this override is local to the extension.
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    // verbatimModuleSyntax forbids ESM syntax in a CommonJS-emitting file, so
+    // it cannot survive the override above. Downlevelled emit is what we want.
+    "verbatimModuleSyntax": false,
     "rootDir": "src",
     "outDir": "dist"
   },

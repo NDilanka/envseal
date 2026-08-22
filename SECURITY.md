@@ -12,7 +12,7 @@
 **Do not open a public GitHub issue.** Please report security vulnerabilities privately:
 
 - **Email:** security@envseal.dev
-- **GitHub private vulnerability reporting:** https://github.com/envseal/envseal/security/advisories
+- **GitHub private vulnerability reporting:** https://github.com/NDilanka/envseal/security/advisories
 
 ## Expected response time
 

@@ -204,6 +204,34 @@ describe('env_use over real stdio JSON-RPC', () => {
     expect(existsSync(marker), 'the command ran despite being denied').toBe(false);
   }, 60_000);
 
+  it('reports a timeout, never a denial, when the confirmation expires unanswered', async () => {
+    const root = project();
+    const marker = join(root, 'the-command-ran');
+    // ENVSEAL_TEST_PROMPTER_OUTCOME drives the refusing prompter: the dialog
+    // resolves with outcome `timeout`, the shape of a real surface whose TTL
+    // fired with nobody at it.
+    const mcp = serve(root, {
+      ENVSEAL_TEST_MODE: '1',
+      ENVSEAL_TEST_PROMPTER_OUTCOME: 'timeout',
+    });
+    await mcp.handshake();
+
+    const text = await mcp.callTool('env_use', {
+      keys: [KEY],
+      command: [
+        process.execPath,
+        '-e',
+        `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+      ],
+    });
+    const result = JSON.parse(text) as { code?: string; userMessage?: string };
+
+    expect(result.code).toBe('SEP_TICKET_EXPIRED');
+    // The assertion that matters: silence must not be quoted as a refusal.
+    expect(result.userMessage ?? '').not.toContain('The user denied');
+    expect(existsSync(marker), 'the command ran although nobody approved it').toBe(false);
+  }, 60_000);
+
   it('reports SEP_NO_INTERACTIVE_SURFACE — never a denial — when there is nobody to ask', async () => {
     const root = project();
     const marker = join(root, 'the-command-ran');

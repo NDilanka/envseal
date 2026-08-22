@@ -55,7 +55,7 @@ export interface ConfirmSurface {
   timeoutMs?: number;
 }
 
-type AskOutcome = 'approved' | 'denied' | 'no-surface' | 'busy' | 'too-large';
+type AskOutcome = 'approved' | 'denied' | 'timed-out' | 'no-surface' | 'busy' | 'too-large';
 
 /**
  * Only one confirmation may be open per process. Without this a model can call
@@ -183,8 +183,15 @@ async function ask(
     });
 
     const result = response.results.find((r) => r.key === keyName);
-    // skipped / cancelled / timeout / a surface that answered about some other
-    // key all mean the same thing here: we did not get a yes.
+    // A timeout is kept apart from a denial: nobody answered at all, and
+    // reporting that as "the user denied" blames a user who never spoke — the
+    // defect class the CLI fixed for the missing-surface case.
+    if (result !== undefined && result.outcome === 'timeout') {
+      return 'timed-out';
+    }
+    // skipped / cancelled / a surface that answered about some other key: we
+    // did not get a yes, and none of them names anyone, so they land on the
+    // honest-but-blunt denial.
     if (result === undefined || result.outcome !== 'entered') {
       return 'denied';
     }
@@ -199,10 +206,10 @@ async function ask(
 /**
  * `onConfirm` for the Broker: gates `env_use`.
  *
- * Throws rather than returning false when no human could be asked, because
- * exec.ts maps a `false` to SEP_CONFIRMATION_DENIED and that would blame the
- * user for a missing surface — the defect this project already fixed once in
- * the CLI.
+ * Throws rather than returning false when no human could be asked or when the
+ * ask expired with nobody answering it, because exec.ts maps a `false` to
+ * SEP_CONFIRMATION_DENIED and that would blame the user for a missing surface
+ * or for a silence — the defect this project already fixed once in the CLI.
  */
 export function createUseConfirm(
   surface: ConfirmSurface,
@@ -220,6 +227,19 @@ export function createUseConfirm(
         return true;
       case 'denied':
         return false;
+      case 'timed-out':
+        // SEP_TICKET_EXPIRED, not SEP_CONFIRMATION_DENIED: the repo already
+        // treats an unanswered prompt as an expired ticket (exit-codes.ts maps
+        // outcome `timeout` and this code to the same exit), and a model that
+        // can tell "nobody answered" from "the user said no" retries instead
+        // of reporting a refusal that never happened.
+        throw new SepError({
+          code: 'SEP_TICKET_EXPIRED',
+          userMessage:
+            'The env_use confirmation closed after its timeout with nobody answering it. Nothing was ' +
+            'run and no value was read. This is not a denial: ask the user to approve it, then call ' +
+            'env_use again.',
+        });
       case 'no-surface':
         throw new SepError({
           code: 'SEP_NO_INTERACTIVE_SURFACE',

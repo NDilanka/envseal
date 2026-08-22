@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createBroker, dispatch } from '../src/index.js';
 import { Broker } from '@envseal/core';
+import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters';
 
 describe('dispatch', () => {
   let broker: Broker;
@@ -77,6 +78,32 @@ describe('dispatch', () => {
     const result = await dispatch(broker, 'env_describe', {});
     expect(result).toHaveProperty('entries');
     expect(Array.isArray(result.entries)).toBe(true);
+  });
+
+  it('reports an unanswered confirmation as SEP_TICKET_EXPIRED, never as a denial', async () => {
+    // A confirmation whose TTL fires with nobody at it resolves with outcome
+    // `timeout`. Reporting that as SEP_CONFIRMATION_DENIED would tell the
+    // model "The user denied the confirmation." for a user who never spoke.
+    const refusing: Prompter = {
+      id: 'ide',
+      available: async () => true,
+      prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+        ticket: req.ticket,
+        results: req.keys.map((k) => ({ key: k.key, outcome: 'timeout' as const })),
+      }),
+      cancel: async () => {},
+    };
+    const result = await dispatch(createBroker({ root, prompter: refusing }), 'env_use', {
+      keys: ['TEST_KEY'],
+      command: [process.execPath, '-e', 'process.exit(0)'],
+    });
+
+    expect(result).toMatchObject({
+      error: { code: 'SEP_TICKET_EXPIRED', retriable: true },
+    });
+    const message = JSON.stringify(result);
+    expect(message).not.toContain('The user denied');
+    expect(message).toContain('nobody answering');
   });
 
   it('does not throw on any dispatch call', async () => {

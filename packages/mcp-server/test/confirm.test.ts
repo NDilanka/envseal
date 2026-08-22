@@ -25,7 +25,7 @@ interface Recorded {
 
 /** A prompter that answers with a fixed string and records what it was shown. */
 function answering(
-  answer: string | 'skip' | 'cancel',
+  answer: string | 'skip' | 'cancel' | 'timeout',
   id: Prompter['id'] = 'ide',
 ): Prompter & Recorded {
   const requests: PromptRequest[] = [];
@@ -41,6 +41,7 @@ function answering(
         results: req.keys.map((k) => {
           if (answer === 'skip') return { key: k.key, outcome: 'skipped' as const };
           if (answer === 'cancel') return { key: k.key, outcome: 'cancelled' as const };
+          if (answer === 'timeout') return { key: k.key, outcome: 'timeout' as const };
           return { key: k.key, outcome: 'entered' as const, value: secretFromUtf8(answer) };
         }),
       };
@@ -121,6 +122,26 @@ describe('env_use confirmation', () => {
     expect(shown).toContain('<0x0a>');
     // The real key line survives.
     expect(shown).toContain('keys:    REAL_KEY');
+  });
+
+  it('reports a timeout as SEP_TICKET_EXPIRED, never as a denial', async () => {
+    // A dialog that expires unanswered means nobody answered. exec.ts turns a
+    // returned `false` into "The user denied the confirmation.", so returning
+    // false here would put words in a user's mouth who never spoke.
+    const confirm = createUseConfirm(surfaceFor(answering('timeout')));
+    await expect(confirm(INFO)).rejects.toMatchObject({
+      code: 'SEP_TICKET_EXPIRED',
+      retriable: true,
+    });
+
+    await confirm(INFO).then(
+      () => expect.fail('a timeout must not be reported as an answer'),
+      (error: unknown) => {
+        expect(isSepError(error)).toBe(true);
+        expect(isSepError(error) && error.userMessage).toContain('nobody answering');
+        expect(isSepError(error) && error.userMessage).not.toContain('The user denied');
+      },
+    );
   });
 
   it('fails with SEP_NO_INTERACTIVE_SURFACE, never SEP_CONFIRMATION_DENIED, with no surface', async () => {

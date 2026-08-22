@@ -7,7 +7,11 @@ import { selectPrompter } from '@envseal/prompters';
 import { createServer } from './index.js';
 import { parseArgv, resolveProjectRoot, USAGE, VERSION } from './cli-args.js';
 import { createProbeApproval, createUseConfirm } from './confirm.js';
-import { createStubPrompter } from './test-prompter.js';
+import {
+  createRefusingPrompter,
+  createStubPrompter,
+  isStubOutcome,
+} from './test-prompter.js';
 
 // NOTE: MCP protocol owns stdout. All diagnostics MUST go to stderr.
 // Any output to stdout corrupts the JSON-RPC stream.
@@ -47,10 +51,14 @@ async function main(): Promise<void> {
     // See the comment in test-prompter.ts for why this is deliberately awkward.
     const stubValue = process.env.ENVSEAL_TEST_PROMPTER_VALUE;
     const testMode = process.env.ENVSEAL_TEST_MODE === '1';
+    // Same double gate and same precedence as the CLI's cli-utils.ts: a fixed
+    // value wins, else a refusal outcome, else the real surface.
     const prompter: Prompter =
       testMode && stubValue !== undefined && stubValue !== ''
         ? createStubPrompter(stubValue)
-        : await selectPrompter();
+        : testMode && isStubOutcome(process.env.ENVSEAL_TEST_PROMPTER_OUTCOME)
+          ? createRefusingPrompter(process.env.ENVSEAL_TEST_PROMPTER_OUTCOME)
+          : await selectPrompter();
 
     // One resolved surface for value entry AND for consent, so the user
     // approves a command on the same surface they type values into.

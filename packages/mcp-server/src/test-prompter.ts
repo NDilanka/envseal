@@ -39,3 +39,36 @@ export function createStubPrompter(value: string): Prompter {
     },
   };
 }
+
+/** Non-`entered` outcomes a stub prompter can be told to report. */
+export type StubOutcome = 'skipped' | 'cancelled' | 'timeout';
+
+export function isStubOutcome(value: string | undefined): value is StubOutcome {
+  return value === 'skipped' || value === 'cancelled' || value === 'timeout';
+}
+
+/**
+ * A prompter that reports a refusal without any UI.
+ *
+ * Confirmations are asked on this prompter too, which until now made every
+ * non-stored outcome undrivable against the real binary — `timeout` could not
+ * be produced at all, so the honest-timeout mapping in confirm.ts was asserted
+ * by nothing end to end. Same mechanism as the CLI's refusing prompter, and
+ * gated the same way (`ENVSEAL_TEST_MODE=1` plus a second variable).
+ *
+ * Strictly the safer of the two stubs: it can only ever make envseal report
+ * that nobody answered or declined. It cannot introduce a value.
+ */
+export function createRefusingPrompter(outcome: StubOutcome): Prompter {
+  return {
+    id: 'ide',
+    available: async () => true,
+    prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+      ticket: req.ticket,
+      results: req.keys.map((k) => ({ key: k.key, outcome })),
+    }),
+    cancel: async () => {
+      /* nothing to tear down */
+    },
+  };
+}

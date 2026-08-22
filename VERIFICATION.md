@@ -208,17 +208,26 @@ what cannot be is listed as a runbook step, not claimed.
   as the documented limitation, not forced. Related honesty gap found by the probe and now
   documented in `docs/cli-contract.md` + `docs/residual-risks.md`: presence checks consult
   only env/`.env`, so keychain entries always report `present: false` and `ensure` re-prompts.
-- **M4 — see §6 evidence row.** Automated artifact-level: headless `claude -p` session with
-  `--plugin-dir plugins/claude-code` against a canary `.env`, transcript grepped for both
-  sentinels; plus `scripts/probe-m4-hook-contract.mjs` (18/18) and the plugin contract tests
-  over built bundles. Human-only remainder: watching `env_request` open a real consent prompt
-  interactively.
-- **M5 — wire contract verified, in-editor load human-only.** The broker↔extension socket
-  protocol (shared `~/.envseal/ide-token`, one-JSON-line framing, unauthenticated fast-fail)
-  is exercised over a real named pipe by `packages/prompters/test/ide.test.ts`. **Runbook
-  (human):** `code --extensions-dir` / load `extensions/vscode` via Extension Development Host,
-  trigger `envseal set`, confirm the password input box shows nonce + reason and the value
-  reaches the broker.
+- **M4 — artifact-level PASS; interactive remainder runbooked.** Two independent headless
+  `claude -p --plugin-dir plugins/claude-code` sessions against a canary `.env` produced
+  transcripts with **zero** occurrences of either sentinel (grep counts 0/0 both sessions);
+  in the second session the child declined to route around a denial and re-secured the
+  `.gitignore` it found missing the rule. The PreToolUse deny path itself is proven by
+  `scripts/probe-m4-hook-contract.mjs` (18/18 over the real bundle), the plugin contract
+  tests over built bundles, the W4 mutation check (disabling `isDeniedSecretPath` turns 8
+  tests red), and a live in-session denial recorded during this verification (a `cat` of the
+  dotenv file was refused by the hook inside the orchestrating session). Human-only
+  remainder: watching `env_request` open a real interactive consent prompt (the page itself
+  is verified separately under M1).
+- **M5 — extension code exercised; in-editor load human-only.** Two layers:
+  `packages/prompters/test/ide.test.ts` drives the wire protocol over a real named pipe
+  (token auth, unauthenticated fast-fail, cancel framing); `scripts/probe-m5-extension-host.mjs`
+  activates the BUILT `extensions/vscode/dist/extension.js` against a `vscode` API stub and
+  drives it with the shipped IdePrompter — activation binds the pipe, the shared token is
+  enforced, `showInputBox` receives password+nonce+reason, the typed value crosses back as a
+  SecretValue, an empty answer maps to `skipped`, and after `deactivate()` nothing answers
+  the pipe. **Runbook (human):** load `extensions/vscode` via Extension Development Host,
+  trigger `envseal set`, confirm the input box renders and the value reaches the broker.
 
 ---
 
@@ -232,7 +241,7 @@ what cannot be is listed as a runbook step, not claimed.
 | E4 docs commands executed | **PASS for the CLI contract + host docs; per-host GUI installs UNVERIFIED.** | Cold audit executed `init/doctor/status/set/ensure/run/revoke --json` against `dist/bin.js` and matched `docs/cli-contract.md` field-for-field; host-doc snippets tested against the built binary during the B8 sweep (doctor outputs, status exit codes, guard branches). What remains human: installing MCP configs inside real Cursor/Zed/etc. GUIs. |
 | E5 publish dry-run correct | **PASS.** | `pnpm release:dry` → 9/9 tarballs "no workspace:, no maps", preflight passed; `scripts/probe-b1-tarball-install.mjs` → all 9 tarballs `npm install` from a bare dir, pinned export imports, both bins run from an unrelated cwd with no `.envseal/` scatter. Registry round-trip impossible pre-publish (no credentials) — recorded, not claimed. |
 | E6 CI green on real run | **UNVERIFIED — no git remote exists.** | `.github/workflows/ci.yml` (3-OS matrix incl. zero-leak + portability jobs) has never executed. Local Windows equivalents of every job pass. Signing this row requires pushing to a remote and watching one green run. |
-| E7 manual gates M1–M5 | **M1 PASS (twice). M2/M3/M5 mechanism-verified; typed-entry remainders runbooked. M4 artifact-level PASS; interactive remainder runbooked.** | M1: prior real-Chrome run + `scripts/probe-m1-browser-bridge.mjs` through the kimi web bridge — page rendered in the user's real Chrome, displayed nonce matched agent nonce, canary round-tripped byte-exact, port refused afterward. M2: `probe-m2-native` (fail-closed paths); typed masked entry = §5.1 runbook. M3: `probe-m3-keychain` (DPAPI blob non-empty, decrypts to canary, `.env` clean, run-leg `UNRESOLVED`); resolution impossible by design (write-only, documented). M4: headless `claude -p --plugin-dir` session — transcript grep 0 hits for both sentinels + `probe-m4-hook-contract` 18/18 + plugin contract tests over built bundles; forced-Read variant recorded in the final report. M5: wire contract over real named pipe (`ide.test.ts`); in-editor load = §5.1 runbook. |
+| E7 manual gates M1–M5 | **M1 PASS (twice). M4 artifact-level PASS (two sessions, zero canary hits). M2/M3/M5 mechanism-verified; human remainders runbooked.** | M1: prior real-Chrome run + `probe-m1-browser-bridge.mjs` through the kimi web bridge — real Chrome rendered the page, displayed nonce matched, canary round-tripped byte-exact, port refused after. M2: `probe-m2-native` fail-closed paths; typed masked entry runbooked. M3: `probe-m3-keychain` DPAPI round-trip; resolution impossible by design (documented). M4: two headless plugin sessions → 0/0 sentinel grep both transcripts; deny path proven by hook-contract probe 18/18, contract tests, W4 mutation, and a live in-session denial; interactive `env_request` observation runbooked. M5: built extension.js activated under a stub host and driven by the shipped IdePrompter end to end (`probe-m5-extension-host.mjs`) + wire tests; in-editor load runbooked. |
 | E8 residual risks accurate | **PASS.** | Seven risks each match implementation on cold re-read (write-only keychain + presence blindness, HTTP loopback, string-conversion points, staged-temp fallback, double-gated test hooks, env_use user-confirmed egress). SECURITY.md count corrected to seven; PLAN §7.2 annotated (Windows DPAPI files, not Credential Manager). |
 
 Launch is authorised only when every row is filled with recorded evidence.

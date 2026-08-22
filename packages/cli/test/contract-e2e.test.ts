@@ -278,6 +278,64 @@ describe('set: documented exit codes', () => {
   });
 });
 
+// `set` declares before it requests, so every attempt that did not end
+// `stored` used to leave the key behind in env.schema.jsonc as required+secret.
+// A single typo then corrupted the manifest permanently: status shows the
+// phantom forever, revoke touches only sinks, init does not prune.
+describe('set: failed attempts leave no phantom declaration', () => {
+  // File-level beforeEach wrote only .gitignore: this project starts WITHOUT a
+  // manifest, exactly like the audited first-run experience.
+  it('removes what it declared when nothing gets stored (CI, exit 4)', () => {
+    const r = runCli(tempDir, ['set', 'FRESH_KEY', '--project', tempDir, '--json'], {
+      CI: '1',
+    });
+    expect(r.exitCode, r.stderr).toBe(4);
+    expect(JSON.parse(r.stdout).code).toBe('SEP_NO_INTERACTIVE_SURFACE');
+    expect(readFileSync(join(tempDir, 'env.schema.jsonc'), 'utf8')).not.toContain('FRESH_KEY');
+    // The mutation being undone must be announced, not silent.
+    expect(r.stderr).toContain('declared FRESH_KEY but nothing was stored');
+  });
+
+  it('keeps unrelated entries while removing only the failed one', () => {
+    writeManifest(tempDir, [{ key: 'KEEP_ME_KEY' }]);
+    const r = runCli(tempDir, ['set', 'FRESH_KEY', '--project', tempDir, '--json'], {
+      CI: '1',
+    });
+    expect(r.exitCode, r.stderr).toBe(4);
+    const manifest = readFileSync(join(tempDir, 'env.schema.jsonc'), 'utf8');
+    expect(manifest).toContain('KEEP_ME_KEY');
+    expect(manifest).not.toContain('FRESH_KEY');
+  });
+
+  it('keeps a pre-existing declaration after a failed set', () => {
+    writeManifest(tempDir, [{ key: 'PRE_EXISTING_KEY' }]);
+    const r = runCli(
+      tempDir,
+      ['set', 'PRE_EXISTING_KEY', '--project', tempDir, '--json'],
+      {
+        ENVSEAL_TEST_MODE: '1',
+        ENVSEAL_TEST_PROMPTER_OUTCOME: 'cancelled',
+      },
+    );
+    expect(r.exitCode, r.stderr).toBe(3);
+    expect(JSON.parse(r.stdout).outcome).toBe('cancelled');
+    expect(readFileSync(join(tempDir, 'env.schema.jsonc'), 'utf8')).toContain('PRE_EXISTING_KEY');
+    // The entry was not added by this run, so there is nothing to announce.
+    expect(r.stderr).not.toContain('declaration removed');
+  });
+
+  it('still declares and stores on success', () => {
+    const r = runCli(tempDir, ['set', 'SUCCESS_FRESH_KEY', '--project', tempDir, '--json'], {
+      ENVSEAL_TEST_MODE: '1',
+      ENVSEAL_TEST_PROMPTER_VALUE: SENTINEL,
+    });
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ key: 'SUCCESS_FRESH_KEY', outcome: 'stored' });
+    expect(readFileSync(join(tempDir, 'env.schema.jsonc'), 'utf8')).toContain('SUCCESS_FRESH_KEY');
+    expect(readFileSync(join(tempDir, '.env'), 'utf8')).toContain('SUCCESS_FRESH_KEY=');
+  });
+});
+
 describe('ensure: documented exit codes', () => {
   beforeEach(() => {
     writeManifest(tempDir, [{ key: 'ENSURE_A' }, { key: 'ENSURE_B' }]);
@@ -325,6 +383,28 @@ describe('ensure: documented exit codes', () => {
     expect(r.exitCode, r.stderr).toBe(4);
     expect(JSON.parse(r.stdout).code).toBe('SEP_NO_INTERACTIVE_SURFACE');
     expect(r.signal).toBe(null);
+  });
+});
+
+// No manifest means NOTHING is declared. describe() used to read that as an
+// empty manifest — zero missing keys — and ensure reported vacuous success with
+// exit 0 while doctor on the same project reported missing declarations.
+describe('ensure: uninitialized project', () => {
+  // No writeManifest here: the fixture stays manifest-less.
+  it('exits 2 with guidance instead of a vacuous success', () => {
+    const r = runCli(tempDir, ['ensure', '--project', tempDir, '--json']);
+    expect(r.exitCode, r.stderr).toBe(2);
+    const parsed = JSON.parse(r.stdout) as { code: string; userMessage: string };
+    expect(parsed.code).toBe('SEP_NOT_DECLARED');
+    expect(parsed.userMessage).toContain('No env.schema.jsonc');
+    expect(parsed.userMessage).toContain('envseal init');
+  });
+
+  it('human output carries the same guidance on stderr', () => {
+    const r = runCli(tempDir, ['ensure', '--project', tempDir]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('No env.schema.jsonc in this project (or parents)');
+    expect(r.stdout).toBe('');
   });
 });
 

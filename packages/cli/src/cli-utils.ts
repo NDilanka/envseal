@@ -89,6 +89,19 @@ export function outcomeForKey(
 }
 
 /**
+ * The only flags that consume the following token as their value — exactly the
+ * ones bin.ts reads with `as string` (`--project`, `--host`). Every other
+ * `--flag` is boolean.
+ *
+ * Without this table the parser treated ANY token after a bare flag as that
+ * flag's value, so `envseal status --json OPENAI_API_KEY` silently parsed as
+ * `status` with neither `--json` nor the key filter: flags.json became the
+ * STRING 'OPENAI_API_KEY' (so `flags.json === true` was false) and the key name
+ * never reached `args`. Plain-text status for all keys, exit 0.
+ */
+const VALUE_FLAGS = new Set(['project', 'host']);
+
+/**
  * Parse command-line arguments, extracting flags and positional args.
  */
 export interface ParsedArgs {
@@ -127,7 +140,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
       } else {
         const key = arg.slice(2);
         const nextArg = argv[i + 1];
-        if (nextArg !== undefined && !nextArg.startsWith('--')) {
+        // Only a known value-taking flag may swallow the next token. A bare
+        // boolean flag (`--json`) must leave it for the positional loop below,
+        // so `status --json KEY` and the documented `status KEY --json` parse
+        // identically.
+        if (VALUE_FLAGS.has(key) && nextArg !== undefined && !nextArg.startsWith('--')) {
           flags[key] = nextArg;
           i++;
         } else {

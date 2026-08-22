@@ -2,9 +2,41 @@ import { emit, fail } from '../output.js';
 import { EXIT, exitCodeForOutcome } from '../exit-codes.js';
 import { createBroker, outcomeForKey } from '../cli-utils.js';
 import { finish } from '../exit.js';
+import { loadManifest, projectPaths, saveManifest } from '@envseal/core';
 import type { ManifestEntry } from '@envseal/protocol';
 
+/**
+ * Undo a declaration THIS invocation added, after nothing was stored under it.
+ *
+ * `set` declares before it requests (the declare-time schema guard has to run
+ * first), so every attempt that did not end `stored` — a CI run with no prompt
+ * surface, a cancelled or timed-out prompt, a typo the user abandons — used to
+ * leave the key behind as required+secret in env.schema.jsonc. Nothing
+ * mentioned the mutation: status then shows a phantom key forever, revoke
+ * touches only sinks, and init does not prune. An entry that already existed
+ * before this run is left alone — it was not ours to remove.
+ *
+ * stderr only: stdout is the machine-readable channel in --json mode.
+ */
+function rollbackDeclaredEntry(root: string, key: string): void {
+  const paths = projectPaths(root);
+  const manifest = loadManifest(paths);
+  if (manifest === null) return;
+  const remaining = manifest.entries.filter((e) => e.key !== key);
+  if (remaining.length === manifest.entries.length) return;
+  manifest.entries = remaining;
+  // saveManifest edits only the changed field through jsonc, so the header
+  // comments survive.
+  saveManifest(paths, manifest);
+  console.error(`declared ${key} but nothing was stored; declaration removed`);
+}
+
 export async function set(root: string, key: string, json: boolean): Promise<void> {
+  // Whether the declare below added the entry, as opposed to finding it already
+  // there. Lives outside the try so the catch can roll it back when `request`
+  // throws (no interactive surface in CI is the common case).
+  let declaredHere = false;
+
   try {
     const broker = await createBroker(root);
 
@@ -26,13 +58,14 @@ export async function set(root: string, key: string, json: boolean): Promise<voi
           secret: true,
           sink: 'dotenv',
         };
-        await broker.declare({
+        const declareResult = await broker.declare({
           entries: [entry],
         });
+        declaredHere = declareResult.added.includes(key);
       } catch {
         // A key name the manifest schema rejects. Fall through: `request` then
         // raises SEP_NOT_DECLARED, which maps to exit 2 (usage) — the right
-        // answer for a bad argument.
+        // answer for a bad argument. Nothing was written, so no rollback.
       }
     }
 
@@ -53,7 +86,9 @@ export async function set(root: string, key: string, json: boolean): Promise<voi
     if (outcome === null) {
       // The ticket resolved without saying anything about the key we asked
       // for. That is an internal inconsistency, not a user decision, so report
-      // it as such rather than as a silent success.
+      // it as such rather than as a silent success. Nothing was stored, so the
+      // declaration we added has nothing to show for itself either.
+      if (declaredHere) rollbackDeclaredEntry(root, key);
       fail(json, `The prompt for ${key} finished without reporting an outcome.`);
       return;
     }
@@ -71,12 +106,20 @@ export async function set(root: string, key: string, json: boolean): Promise<voi
       });
     }
 
+    if (outcome !== 'stored' && declaredHere) {
+      rollbackDeclaredEntry(root, key);
+    }
+
     const code = exitCodeForOutcome(outcome);
     if (code !== EXIT.OK) {
       finish(code);
       return;
     }
   } catch (error) {
+    // `request` throws before any prompt happens (SEP_NO_INTERACTIVE_SURFACE
+    // under CI=1 is the common route here), so a declaration we just added
+    // would otherwise outlive a run that never even asked for the value.
+    if (declaredHere) rollbackDeclaredEntry(root, key);
     fail(json, error);
   }
 }

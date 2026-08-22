@@ -1,10 +1,34 @@
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
+import { loadManifest, projectPaths } from '@envseal/core';
+import { SepError } from '@envseal/protocol';
 import { createBroker, outcomeForKey } from '../cli-utils.js';
 import { finish } from '../exit.js';
 
 export async function ensure(root: string, json: boolean): Promise<void> {
   try {
+    // A project without env.schema.jsonc declares NOTHING, but describe()
+    // reports that exactly like an empty manifest: zero missing keys, so this
+    // used to print "✓ All required keys are satisfied" and exit 0 — vacuous
+    // success from the command whose job is telling the truth, while doctor on
+    // the same project reported the missing declarations.
+    //
+    // Exit USAGE (2), not UNSATISFIED (1): 1 means "required keys are still
+    // missing after the operation", and there are no keys here to satisfy.
+    // This is the same class as SEP_NOT_DECLARED, which already maps to 2.
+    // (`status` keeps exiting 0 on an init-less project because it is a
+    // read-only report with genuinely nothing to show; `ensure` claims work
+    // done, so it may not.) The message below differs from the missing-keys
+    // failure ("✗ Only N/M keys set" / satisfied:false), so scripts can tell
+    // the two apart by text as well as code.
+    if (loadManifest(projectPaths(root)) === null) {
+      throw new SepError({
+        code: 'SEP_NOT_DECLARED',
+        userMessage:
+          'No env.schema.jsonc in this project (or parents). Run `envseal init` to create one.',
+      });
+    }
+
     const broker = await createBroker(root);
     const status = await broker.describe();
 

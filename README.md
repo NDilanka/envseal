@@ -57,9 +57,9 @@ The protocol splits the problem into four principals, each with a specific trust
                                      └─────┘
 ```
 
-`*` keychain is write-only today (a stored value cannot yet be read back). `†` declared in the schema but not implemented — these sinks throw `SEP_SINK_UNAVAILABLE`. Only `dotenv` both stores and resolves values.
+`*` keychain stores AND resolves values today (Windows DPAPI blob, macOS `security`, Linux `secret-tool`). `†` declared in the schema but not implemented — these sinks throw `SEP_SINK_UNAVAILABLE`. `dotenv` and `keychain` both store and resolve values.
 
-**The one rule:** The secret value travels `User → secure input surface → broker → sink (.env / keychain / vault)` and crosses no other boundary. Of the declared sinks, only `dotenv` and `keychain` accept values today, and `keychain` is write-only (see the legend above). The model and harness can only see key names, declarations, tickets, and redacted status metadata.
+**The one rule:** The secret value travels `User → secure input surface → broker → sink (.env / keychain / vault)` and crosses no other boundary. Of the declared sinks, only `dotenv` and `keychain` are functional today. The model and harness can only see key names, declarations, tickets, and redacted status metadata.
 
 The agent's verbs are strictly declarative:
 - **`env_declare`** — "This project needs `OPENAI_API_KEY`, here's the format and provider."
@@ -91,7 +91,7 @@ node /path/to/envseal/packages/cli/dist/bin.js ensure
 
 Once published, this becomes `pnpm add -D @envseal/cli` and `npx envseal init`.
 
-`init` scans your source for environment-variable references and writes `env.schema.jsonc`, filling in provider metadata for keys it recognises. `ensure` then prompts for anything missing, in one pass. Values go to `.env` by default (after checking `.gitignore` covers it and git is not already tracking it), or to your OS keychain with `sink: "keychain"` — note the keychain sink is write-only today: it stores the value, but `envseal run` cannot yet resolve a keychain-stored value back, so use dotenv if the command needs the value.
+`init` scans your source for environment-variable references and writes `env.schema.jsonc`, filling in provider metadata for keys it recognises. `ensure` then prompts for anything missing, in one pass. Values go to `.env` by default (after checking `.gitignore` covers it and git is not already tracking it), or to your OS keychain with `sink: "keychain"` — keychain-stored values are resolved by `envseal run` like dotenv ones, while keeping the plaintext out of the project directory.
 
 ## Works with any agent
 
@@ -111,7 +111,7 @@ Tier 4 makes the claim "works with any agent" true rather than aspirational: an 
 envseal offers different levels of protection depending on your host. `envseal doctor` reports which tier you have:
 
 - **Tier A** — Full protocol + interception hooks. Claude Code **with the envseal plugin installed**. Model tool calls and user messages are pre-filtered to prevent accidental exfiltration. **Recommended.** Running under Claude Code without the plugin reports tier B, not A — `doctor` checks for the hook wiring rather than assuming it.
-- **Tier B** — Protocol + advisory guardrails (rules files, pre-commit hooks, Continue contexts). Leak-through-shell is possible; recommend the `keychain` sink so `.env` holds only references — once keychain read-back ships; today keychain is write-only, so dotenv is the only sink `envseal run` can resolve.
+- **Tier B** — Protocol + advisory guardrails (rules files, pre-commit hooks, Continue contexts). Leak-through-shell is possible; recommend the `keychain` sink so `.env` holds nothing at all — it stores and resolves values, keeping plaintext out of the project directory.
 - **Tier C** — Protocol only. Same recommendation, stated more plainly.
 
 **On Tier B and C, a shell command can still exfiltrate a value.** The broker requires confirmation for every command and adds a network egress warning when the command can reach the network, but a user who clicks through defeats the control. This is not a limitation of the system; it is inherent to any tool that lets an agent execute arbitrary code. envseal's guarantees are structural at the protocol level — the model cannot obtain a value through the protocol itself — but the user remains responsible for what code they approve.

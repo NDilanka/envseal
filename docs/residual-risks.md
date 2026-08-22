@@ -25,7 +25,7 @@ the broker will:
 The middle ground — structural guarantees at the protocol level plus UX barriers at the execution level — is what envseal provides. But those UX barriers can be overridden by user choice, and that is not a bug. It is the price of remaining useful.
 
 **Mitigation:** 
-- Recommend the `keychain` sink so values stay out of `.env` (write-only today — it cannot resolve a stored value back, presence checks cannot see a stored value so `status` reports such keys absent and `ensure` re-prompts for them; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
+- Recommend the `keychain` sink so values stay out of `.env` (it stores AND resolves values — presence checks consult the declared sink, so `status` reports keychain-stored keys present and `envseal run` injects them; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
 - Use command allowlists to pre-approve safe commands
 - Educate users: understand what code you approve
 - Use this only with agents you trust
@@ -47,7 +47,7 @@ This is the single largest remaining hole in the system, and it is important to 
 
 **Mitigation:**
 - Minimize the lifetime of secret values in memory (envseal zeroes Buffers immediately after use)
-- Prefer sinks that keep values out of plaintext — `keychain` is the only non-plaintext sink that accepts values today (write-only); `vault` and `sops` are declared but not implemented
+- Prefer sinks that keep values out of plaintext — `keychain` is the only non-plaintext sink today, and it stores and resolves values; `vault` and `sops` are declared but not implemented
 - Minimize the number of operations on the secret value
 - Run envseal as a separate process with limited lifetime per operation
 
@@ -180,7 +180,7 @@ Use envseal with clear expectations about what it protects. It is a defense in d
 - Using envseal to prevent accidental paste-into-chat
 - Using guardrails (pre-commit hooks, rules files, command allowlists) to catch mistakes
 - Educating yourself about what code you approve
-- Using keychain/vault sinks to keep secrets out of plaintext (`keychain` accepts values today but is write-only; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
+- Using keychain/vault sinks to keep secrets out of plaintext (`keychain` stores and resolves values; `vault`, `sops`, `onepassword`, and `doppler` are declared but not implemented)
 - Rotating keys regularly
 - Limiting key scope (development keys, not production keys)
 

@@ -522,12 +522,15 @@ must be in place before the probe subsystem ships — not after.
 
 ### 7.2 `keychain`
 
-> **As implemented today:** macOS Keychain (`security add-generic-password -U`), Linux
-> libsecret (`secret-tool`), and on Windows DPAPI-encrypted files under
-> `%LOCALAPPDATA%\envseal\creds\<KEY>` (`ConvertFrom-SecureString`) — not the Windows
-> Credential Manager. The sink is **write-only**: `read()` returns null, so `envseal run`
-> cannot resolve a keychain-stored value back, and `.env` receives no reference. See
-> docs/residual-risks.md §1.
+> **As implemented today:** full round-trip on all three platforms — macOS Keychain
+> (`security add/find/delete-generic-password`), Linux libsecret (`secret-tool
+> store/lookup/clear`), and on Windows DPAPI-encrypted files under
+> `%LOCALAPPDATA%\envseal\creds\<KEY>` (`ConvertFrom-SecureString`, decrypted with
+> `ConvertTo-SecureString`) — not the Windows Credential Manager. `read()` decrypts
+> what `write()` stored, `remove()` deletes it, and presence consults the declared
+> sink, so `status` reports keychain-stored keys present and `envseal run` injects
+> them. `.env` still receives no reference (no `secret-ref://` indirection yet).
+> See docs/residual-risks.md §1.
 
 macOS Keychain (`security add-generic-password -U`), Windows Credential Manager via DPAPI
 (`CredWrite`), Linux libsecret (`secret-tool`). `.env` then holds a reference:

@@ -1,21 +1,26 @@
-// Manual gate M3 — keychain sink round-trip, as far as it can go.
+// Manual gate M3 — keychain sink round-trip.
 //
 // The gate as documented ("set with sink: keychain, then `envseal run`
-// resolves the reference") CANNOT pass today: the keychain sink is write-only
-// (read() returns null; docs/residual-risks.md and README say so). This probe
-// verifies exactly what IS true on Windows and records what is not:
+// resolves the reference") HOLDS as of this probe. The sink is no longer
+// write-only: read() decrypts what write() stored (Windows DPAPI blob,
+// macOS security, Linux secret-tool), remove() deletes it, and presence
+// consults the declared sink — so status reports present:true and run
+// injects the value into the child environment.
 //
+// Verified end to end on Windows:
 //   1. a value set through the real Broker into a keychain-sink entry lands in
 //      %LOCALAPPDATA%\envseal\creds\<KEY> as a DPAPI blob (ConvertFrom-
 //      SecureString output), never as plaintext;
 //   2. `.env` does NOT receive the value;
 //   3. `status --json` reports present:true with sink "keychain";
-//   4. `envseal run --` cannot resolve it — recorded verbatim as the
-//      documented limitation, not papered over.
+//   4. `envseal run --` resolves it: the child prints the value, which the
+//      broker's redactor masks to «redacted:M3_CANARY_KEY» on the way out —
+//      the mask only appears when the child genuinely held the exact canary;
+//   5. `revoke` removes the credential and status flips back to absent.
 //
 //   pnpm -r build && node scripts/probe-m3-keychain.mjs
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -34,7 +39,6 @@ const fail = (msg) => {
 };
 
 const root = mkdtempSync(join(tmpdir(), 'envseal-m3-'));
-const { writeFileSync } = await import('node:fs');
 writeFileSync(join(root, '.gitignore'), '.env\n', 'utf8');
 
 console.log('=== store through the real Broker (sink: keychain) ===');
@@ -113,7 +117,13 @@ console.log('=== blob decrypts back to the canary (DPAPI round-trip) ===');
   );
   // Same scrub the sink does: a PSModulePath inherited from an editor leads
   // with PowerShell 7 modules and breaks ConvertTo-SecureString under 5.1.
-  const { PSModulePath: _shadowed, ...probeEnv } = process.env;
+  // The scrub must drop EVERY casing of the variable: launchers such as pnpm
+  // rewrite the name as PSMODULEPATH, which an exact-case match leaves behind.
+  const probeEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (/^psmodulepath$/i.test(k)) continue;
+    probeEnv[k] = v;
+  }
   const r = spawnSync('powershell', ['-NoProfile', '-File', decryptScript], {
     encoding: 'utf8',
     timeout: 60_000,
@@ -152,16 +162,13 @@ console.log('=== status --json sees it, values never ===');
   const entry = parsed?.entries?.find((e) => e.key === KEY);
   console.log(`  entry: ${JSON.stringify(entry)}`);
   if (entry?.sink !== 'keychain') fail(`expected sink keychain, got ${entry?.sink}`);
+  // Presence now consults the declared sink, so a stored credential reads as
+  // present:true — the old write-only behaviour reported false forever.
+  if (!entry?.present) fail(`expected present:true, got ${entry?.present}`);
   if (r.stdout.includes(CANARY)) fail('status --json printed the canary');
-  // present:false is the write-only limitation surfacing in status itself:
-  // resolvePresence() consults process-env and .env only, never the keychain
-  // sink. Recorded verbatim like the run leg below, not papered over.
-  if (!entry?.present) {
-    console.log('  recorded: status reports present:false (presence cannot see the write-only keychain sink)');
-  }
 }
 
-console.log('=== envseal run -- cannot resolve (documented write-only limitation) ===');
+console.log('=== envseal run -- resolves the keychain reference ===');
 {
   const r = spawnSync(
     process.execPath,
@@ -178,17 +185,51 @@ console.log('=== envseal run -- cannot resolve (documented write-only limitation
   console.log(`  exit=${r.status}`);
   console.log(`  stdout: ${(r.stdout ?? '').trim().slice(0, 300)}`);
   console.log(`  stderr: ${(r.stderr ?? '').trim().slice(0, 300)}`);
-  if (combined.includes(CANARY)) fail('run resolved the write-only keychain reference to plaintext');
-  // The honest expectation: the child sees UNRESOLVED (or run refuses). Either
-  // way the value must not appear. Record which actually happened.
-  if ((r.stdout ?? '').trim() === 'UNRESOLVED') {
-    console.log('  recorded: child ran without the value (write-only confirmed live)');
+  // Resolution proof WITHOUT leaking: the broker's redactor rewrites the value
+  // in the child's captured stdout to «redacted:M3_CANARY_KEY». The labelled
+  // mask only ever appears when the child actually held the exact canary, so
+  // seeing the mask proves `run` resolved the keychain-stored reference.
+  const REDACTED_MASK = `«redacted:${KEY}»`;
+  if ((r.stdout ?? '').trim() !== REDACTED_MASK) {
+    fail(`expected child stdout redacted to "${REDACTED_MASK}", got "${(r.stdout ?? '').trim().slice(0, 100)}"`);
   }
+  if ((r.stdout ?? '').trim() === 'UNRESOLVED') fail('child ran without the value — keychain resolution failed');
+  if (combined.includes(CANARY)) fail('raw canary leaked through run output (redaction missed it)');
+}
+
+console.log('=== revoke removes it; status flips back to absent ===');
+{
+  const r = spawnSync(process.execPath, [cli, 'revoke', KEY, '--json', '--project', root], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  let revoked = null;
+  try {
+    revoked = JSON.parse(r.stdout);
+  } catch {
+    fail(`revoke --json stdout was not JSON: ${JSON.stringify(r.stdout?.slice(0, 200))}`);
+  }
+  console.log(`  revoke: ${JSON.stringify(revoked)}`);
+  if (revoked?.removed !== true) fail(`expected removed:true, got ${JSON.stringify(revoked)}`);
+
+  const s = spawnSync(process.execPath, [cli, 'status', '--json', '--project', root], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  let parsed = null;
+  try {
+    parsed = JSON.parse(s.stdout);
+  } catch {
+    fail(`post-revoke status --json stdout was not JSON: ${JSON.stringify(s.stdout?.slice(0, 200))}`);
+  }
+  const entry = parsed?.entries?.find((e) => e.key === KEY);
+  console.log(`  post-revoke entry: ${JSON.stringify(entry)}`);
+  if (entry?.present !== false) fail(`expected present:false after revoke, got ${entry?.present}`);
 }
 
 rmSync(root, { recursive: true, force: true });
 try {
-  rmSync(credFile, { force: false });
+  rmSync(credFile, { force: true });
   console.log('cleaned up credential file');
 } catch (e) {
   console.log(`NOTE: could not remove ${credFile}: ${e.message}`);
@@ -198,4 +239,4 @@ if (failures > 0) {
   console.log(`FAIL: ${failures} check(s) failed`);
   process.exit(1);
 }
-console.log('PASS: M3 write leg verified; resolution leg fails as documented (write-only)');
+console.log('PASS: M3 round trip verified — store, status present:true, run resolves, revoke clears');

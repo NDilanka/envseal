@@ -40,9 +40,9 @@ Restart Zed, confirm the server under `MCP`, then run `envseal doctor`.
 
 Zed cannot stop a shell command from leaking a value. Set the `keychain`
 sink to keep the value out of `.env` entirely: it is stored in the OS-backed
-store and nothing is written to `.env`, not even a reference. Note the sink is
-write-only today — `envseal run` cannot yet resolve a keychain-stored value
-back — so use `dotenv` for keys a command must actually receive:
+store and nothing is written to `.env`, not even a reference. Note the sink both
+stores and resolves today — `envseal run` injects a keychain-stored value just
+like a dotenv one:
 
 ```jsonc
 {

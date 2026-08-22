@@ -38,10 +38,9 @@ Restart Cursor, then `Settings → MCP` should show `envseal-mcp` connected.
 
 A Tier B host cannot stop a shell command from leaking a value. Set the
 `keychain` sink so plaintext never touches disk: the value goes to the OS-backed
-store and nothing is written to `.env` — not even a reference. Note the sink is
-write-only today: it stores the value, but `envseal run` cannot yet resolve a
-keychain-stored value back, so use `dotenv` for keys a command must actually
-receive:
+store and nothing is written to `.env` — not even a reference. Note the sink
+both stores and resolves today: `envseal run` injects a keychain-stored value
+just like a dotenv one:
 
 ```jsonc
 {

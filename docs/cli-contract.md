@@ -105,11 +105,12 @@ Prompt for a single key.
 
 Show the status of environment keys. Do not show values.
 
-Presence is resolved from the process environment and `.env` — a `keychain`-sink
-entry therefore always reports `present: false` until keychain read-back ships,
-even right after a successful store (see `docs/residual-risks.md`). `ensure`
-consequently re-prompts for keychain-declared keys on every run; use `dotenv`
-for keys a command must actually receive.
+Presence is resolved sink-aware: process environment first, then the entry's
+declared sink (`dotenv` reads `.env`; `keychain` consults the OS-backed store).
+A stored keychain credential therefore reports `present: true`, and `envseal
+run` resolves it like any other sink. If a credential store errors while being
+read (locked keychain, DPAPI failure), presence degrades to `present: false`
+rather than failing the report.
 
 **Arguments:**
 - `KEY` (optional, repeatable) — Show status only for these keys. Without arguments, show all.

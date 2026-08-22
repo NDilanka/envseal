@@ -16,7 +16,7 @@ export interface SessionInput {
   [key: string]: unknown;
 }
 
-export function computeContext(root: string): string {
+export async function computeContext(root: string): Promise<string> {
   try {
     const paths = projectPaths(root);
     const manifest = loadManifest(paths);
@@ -27,7 +27,13 @@ export function computeContext(root: string): string {
     if (required.length === 0) {
       return '';
     }
-    const presence = resolvePresence(paths, required.map((entry) => entry.key));
+    // Sink-aware: keychain-declared keys are resolved through their sink, so a
+    // stored credential counts as present instead of re-prompting forever.
+    const presence = await resolvePresence(
+      paths,
+      required.map((entry) => entry.key),
+      { sinks: new Map(required.map((entry) => [entry.key, entry.sink ?? 'dotenv'])) },
+    );
     const missing = required
       .filter((entry) => presence.get(entry.key)?.present === false)
       .map((entry) => entry.key);
@@ -67,17 +73,16 @@ export function toHookOutput(contextMessage: string): SessionStartHookOutput {
   };
 }
 
-export function run(): Promise<void> {
-  return readPayload<SessionInput>()
-    .then((payload) => {
-      const root =
-        payload.projectRoot ?? payload.workspaceRoot ?? payload.cwd ?? process.cwd();
-      const contextMessage = computeContext(findProjectRoot(root));
-      return toHookOutput(contextMessage);
-    })
-    .then((result) => {
-      writeResult(result);
-    });
+export async function run(): Promise<void> {
+  try {
+    const payload = await readPayload<SessionInput>();
+    const root =
+      payload.projectRoot ?? payload.workspaceRoot ?? payload.cwd ?? process.cwd();
+    const contextMessage = await computeContext(findProjectRoot(root));
+    writeResult(toHookOutput(contextMessage));
+  } catch {
+    writeResult(toHookOutput(''));
+  }
 }
 
 if (process.argv[1] !== undefined) {

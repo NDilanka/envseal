@@ -43,10 +43,9 @@ before relying on them.
 
 On **B** and **C** a shell command can still exfiltrate a value. The docs for
 those hosts recommend the `keychain` sink so no plaintext touches disk — the
-value goes to the OS-backed store and nothing is written to `.env`. Note the
-keychain sink is write-only today: it stores the value, but `envseal run`
-cannot yet resolve a keychain-stored value back, so use `dotenv` if the command
-needs the value.
+value goes to the OS-backed store and nothing is written to `.env`. The keychain
+sink both stores and resolves today: `envseal run` injects a keychain-stored
+value just like a dotenv one.
 
 ## MCP server command
 

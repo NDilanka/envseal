@@ -20,7 +20,7 @@ export interface StatuslineInput {
 const CACHE_TTL_MS = 5_000;
 const CACHE_FILE = join(homedir(), '.envseal', 'statusline-cache.json');
 
-export function countMissing(root: string): number {
+export async function countMissing(root: string): Promise<number> {
   const paths = projectPaths(root);
   const manifest = loadManifest(paths);
   if (manifest === null) {
@@ -30,7 +30,13 @@ export function countMissing(root: string): number {
   if (required.length === 0) {
     return 0;
   }
-  const presence = resolvePresence(paths, required.map((entry) => entry.key));
+  // Sink-aware: keychain-declared keys are resolved through their sink, so a
+  // stored credential no longer counts as missing.
+  const presence = await resolvePresence(
+    paths,
+    required.map((entry) => entry.key),
+    { sinks: new Map(required.map((entry) => [entry.key, entry.sink ?? 'dotenv'])) },
+  );
   return required.filter((entry) => presence.get(entry.key)?.present === false).length;
 }
 
@@ -72,7 +78,7 @@ export function writeCache(entry: CacheEntry): void {
   }
 }
 
-export function computeStatus(root: string): string {
+export async function computeStatus(root: string): Promise<string> {
   const cached = readCache();
   if (
     cached !== null &&
@@ -81,19 +87,19 @@ export function computeStatus(root: string): string {
   ) {
     return cached.output;
   }
-  const count = countMissing(root);
+  const count = await countMissing(root);
   const output = render(count);
   writeCache({ root, lastAt: Date.now(), count, output });
   return output;
 }
 
-export function run(): void {
+export async function run(): Promise<void> {
   const root = findProjectRoot(process.cwd());
   try {
-    stdout.write(computeStatus(root) + '\n');
+    stdout.write((await computeStatus(root)) + '\n');
   } catch {
     stdout.write('🔑 ok\n');
   }
 }
 
-run();
+void run();

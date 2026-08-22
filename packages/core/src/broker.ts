@@ -94,7 +94,14 @@ export class Broker {
 
   async describe(): Promise<ManifestStatus> {
     const manifest = loadManifest(this.paths) ?? emptyManifest();
-    const presence = resolvePresence(this.paths, manifest.entries.map((e) => e.key));
+    // Sink-aware: a keychain-declared entry is only resolvable through its
+    // sink, so presence must consult it or status would report present:false
+    // forever (the write-only era bug).
+    const presence = await resolvePresence(
+      this.paths,
+      manifest.entries.map((e) => e.key),
+      { sinks: new Map(manifest.entries.map((e) => [e.key, e.sink ?? 'dotenv'])) },
+    );
 
     const entries: KeyStatus[] = [];
     const missingRequired: string[] = [];

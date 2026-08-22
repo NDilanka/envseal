@@ -45,6 +45,34 @@ describe('manifest', () => {
   });
 
   describe('saveManifest', () => {
+    it('renders a fresh manifest without a dead $schema pointer', () => {
+      // "./spec/sep-1/manifest.schema.json" only resolves inside this repo; in
+      // a user project editors flagged it as a dangling reference.
+      const paths = projectPaths(tmpDir);
+      saveManifest(paths, emptyManifest());
+      const saved = readFileSync(paths.manifest, 'utf8');
+
+      expect(saved).not.toContain('"$schema"');
+      expect(saved).toContain('// JSON Schema: spec/sep-1/manifest.schema.json in the envseal repo');
+    });
+
+    it('preserves an existing $schema field across an update', () => {
+      const paths = projectPaths(tmpDir);
+      writeFileSync(
+        paths.manifest,
+        '{\n  "$schema": "https://example.test/manifest.schema.json",\n  "version": 1,\n  "entries": []\n}\n',
+        'utf8',
+      );
+
+      declareEntries(paths, [{ key: 'NEW_KEY', description: 'New key' }]);
+      const saved = readFileSync(paths.manifest, 'utf8');
+
+      expect(saved).toContain('"$schema": "https://example.test/manifest.schema.json"');
+      expect(saved).toContain('NEW_KEY');
+      const reloaded = loadManifest(paths);
+      expect(reloaded?.entries).toHaveLength(1);
+    });
+
     it('preserves comments on update', () => {
       const paths = projectPaths(tmpDir);
       const manifestWithComments = `// This is a leading comment

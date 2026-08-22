@@ -267,6 +267,10 @@ console.log('\n=== 6. free-text fields (T3): does anything reject a value? ===')
   const root = freshRoot('text');
   const broker = new Broker({ root, prompter: stubPrompter('x'.repeat(40)) });
   const results = {};
+  // Seed a clean entry so the manifest exists for the leak scan below: since
+  // the B2 fix every leaky declare in this section is REJECTED and writes
+  // nothing, so without a seed readFileSync would find no file at all.
+  await broker.declare({ entries: [{ key: 'SEED_KEY', description: 'clean seed', required: true }] });
   try {
     await broker.declare({
       entries: [{ key: 'DESC_KEY', description: `the key is ${SENTINEL}`, required: true, secret: true }],

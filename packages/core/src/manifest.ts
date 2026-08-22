@@ -78,7 +78,6 @@ export function loadManifest(paths: ProjectPaths): ManifestType | null {
 
 function renderFreshManifest(manifest: ManifestType): string {
   const body = `{
-  "$schema": "./spec/sep-1/manifest.schema.json",
   "version": ${manifest.version},
   "entries": ${JSON.stringify(manifest.entries, null, 2)}
 }
@@ -86,6 +85,8 @@ function renderFreshManifest(manifest: ManifestType): string {
   return [
     '// envseal manifest — declares which environment variables this project uses.',
     '// Values are NEVER stored here; only metadata. Declare with env_declare.',
+    '// JSON Schema: spec/sep-1/manifest.schema.json in the envseal repo (kept as a',
+    '// comment: a $schema field would dangle in every project but this one).',
     body,
   ].join('\n');
 }

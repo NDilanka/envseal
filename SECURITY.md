@@ -47,4 +47,4 @@ For more detail on the threat model and what is defended against, see [docs/thre
 
 See [docs/threat-model.md](docs/threat-model.md) for a detailed threat and mitigation analysis (T1–T14).
 
-See [docs/residual-risks.md](docs/residual-risks.md) for five risks that remain even with the protocol in place.
+See [docs/residual-risks.md](docs/residual-risks.md) for seven risks that remain even with the protocol in place.

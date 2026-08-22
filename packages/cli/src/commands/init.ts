@@ -15,8 +15,10 @@ export async function init(
 
     // declareEntries creates the manifest when absent and edits it surgically
     // when present, so re-running init on an existing project is safe and
-    // preserves any descriptions the user has written by hand.
-    const result = entries.length > 0 ? declareEntries(paths, entries) : { added: [], updated: [], unchanged: [] };
+    // preserves any descriptions the user has written by hand. It runs even
+    // when the scan finds nothing: the "created an empty manifest" message
+    // below must be true, not aspirational.
+    const result = declareEntries(paths, entries);
     const manifest = loadManifest(paths);
 
     const host = hostOverride

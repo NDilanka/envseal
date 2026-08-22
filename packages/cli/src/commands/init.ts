@@ -2,6 +2,13 @@ import { projectPaths, loadManifest, declareEntries } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { detectHost } from '../host.js';
 import { scanForEnvKeys, entryForKey } from '../scan.js';
+import { EXIT } from '../exit-codes.js';
+import { finish } from '../exit.js';
+
+// The ids detectHost can ever return. --host used to accept any string
+// silently, recording a host detection would never report and printing a tier
+// computed for a fiction.
+const KNOWN_HOST_IDS = ['claude-code', 'cursor', 'continue', 'aider', 'generic', 'unknown'];
 
 export async function init(
   root: string,
@@ -9,6 +16,14 @@ export async function init(
   hostOverride?: string,
 ): Promise<void> {
   try {
+    if (hostOverride !== undefined && !KNOWN_HOST_IDS.includes(hostOverride)) {
+      console.error(
+        `Error: unknown --host '${hostOverride}'. Valid values: ${KNOWN_HOST_IDS.join(', ')}.`,
+      );
+      finish(EXIT.USAGE);
+      return;
+    }
+
     const paths = projectPaths(root);
     const discovered = scanForEnvKeys(root);
     const entries = discovered.map(entryForKey);
@@ -61,6 +76,23 @@ export async function init(
     }
     console.log(`  Host: ${host.name} (protection tier ${host.tier})`);
     if (host.recommendation) console.log(`  ${host.recommendation}`);
+    if (hostOverride) {
+      // The override line above is what was ASKED for, not what is here. An
+      // auto-detected init on the same project can print a different tier, and
+      // doctor is the one that reports evidence.
+      console.log('  Override recorded; envseal doctor reports what is actually detected.');
+    }
+    if (host.id === 'claude-code') {
+      // Without this the first run ends at a manifest and no connection: init
+      // writes env.schema.jsonc but nothing tells the user the agent still has
+      // to be pointed at the broker.
+      console.log('');
+      console.log('Connect your agent: create .mcp.json in the project root containing');
+      console.log('  {"mcpServers":{"envseal-mcp":{"command":"envseal-mcp","args":[]}}}');
+      console.log(
+        'then restart Claude Code — or install plugins/claude-code for Tier A hooks.',
+      );
+    }
   } catch (error) {
     fail(json, error);
   }

@@ -504,3 +504,56 @@ describe('status and doctor: documented exit codes', () => {
     expect(runCli(tempDir, ['not-a-command', '--project', tempDir]).exitCode).toBe(2);
   });
 });
+
+// A help request used to be indistinguishable from a run: `ensure -h` executed
+// the real command (exit 4 under CI) and interactive `set --help` reached the
+// live browser prompt. Help must describe the command and do nothing else.
+describe('help: -h/--help describes without executing', () => {
+  it('ensure -h prints usage and exits 0 instead of running under CI', () => {
+    writeManifest(tempDir, [{ key: 'HELP_ENSURE_KEY' }]);
+    const r = runCli(tempDir, ['ensure', '-h', '--project', tempDir], { CI: '1' });
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toContain('Usage');
+    expect(r.stdout).toContain('envseal ensure');
+    // The command did not run: no outcome object, no missing-surface complaint.
+    expect(r.stdout).not.toContain('satisfied');
+    expect(r.stdout + r.stderr).not.toContain('SEP_NO_INTERACTIVE_SURFACE');
+  });
+
+  it('set --help prints usage, exits 0, and leaves no manifest behind', () => {
+    const r = runCli(tempDir, ['set', '--help', '--project', tempDir], { CI: '1' });
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toContain('Usage');
+    expect(r.stdout).toContain('envseal set');
+    // `set` declares before it requests: had the command executed at all, even
+    // its failure paths would have created env.schema.jsonc here.
+    expect(existsSync(join(tempDir, 'env.schema.jsonc'))).toBe(false);
+  });
+});
+
+// --host used to accept any string silently, and a claude-code first run ended
+// at a manifest with no word on connecting the agent to the broker.
+describe('init: --host validation and first-run guidance', () => {
+  it('rejects an unknown host with exit 2, listing the valid values', () => {
+    const r = runCli(tempDir, ['init', '--host', 'vscode', '--project', tempDir]);
+    expect(r.exitCode, r.stdout).toBe(2);
+    expect(r.stderr).toContain("unknown --host 'vscode'");
+    expect(r.stderr).toContain('claude-code, cursor, continue, aider, generic, unknown');
+    // Rejected before any filesystem work: no manifest may appear.
+    expect(existsSync(join(tempDir, 'env.schema.jsonc'))).toBe(false);
+  });
+
+  it('prints the MCP connection step for claude-code', () => {
+    const r = runCli(tempDir, ['init', '--host', 'claude-code', '--project', tempDir]);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toContain('.mcp.json');
+    expect(r.stdout).toContain('envseal-mcp');
+    expect(r.stdout).toContain('restart Claude Code');
+  });
+
+  it('notes that an override may differ from what detection reports', () => {
+    const r = runCli(tempDir, ['init', '--host', 'cursor', '--project', tempDir]);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toContain('Override recorded; envseal doctor reports what is actually detected.');
+  });
+});

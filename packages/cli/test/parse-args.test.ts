@@ -109,4 +109,32 @@ describe('parseArgs', () => {
       expect(parsed.flags.json).toBe(true);
     });
   });
+
+  // -h used to fall through to the positional loop, so `envseal ensure -h`
+  // ran the real command with '-h' as a stray argument (exit 4 under CI).
+  describe('-h/--help is a control token, not an argument', () => {
+    it('single-dash -h sets flags.help wherever it appears', () => {
+      const after = parseArgs(['ensure', '-h']);
+      expect(after.flags.help).toBe(true);
+      expect(after.args).toEqual(['ensure']);
+
+      const before = parseArgs(['-h', 'ensure']);
+      expect(before.flags.help).toBe(true);
+      expect(before.args).toEqual(['ensure']);
+    });
+
+    it('long --help lands on the same flag', () => {
+      // bin.ts strips the command word first; this is the rest of the line.
+      const parsed = parseArgs(['MY_KEY', '--help']);
+      expect(parsed.flags.help).toBe(true);
+      expect(parsed.args).toEqual(['MY_KEY']);
+    });
+
+    it('a child --help after -- stays part of the child command', () => {
+      // `envseal run -- npm --help` must describe npm, not envseal.
+      const parsed = parseArgs(['--yes', '--', 'npm', '--help']);
+      expect(parsed.flags.help).toBeUndefined();
+      expect(parsed.args).toEqual(['--', 'npm', '--help']);
+    });
+  });
 });

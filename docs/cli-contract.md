@@ -16,6 +16,12 @@
 
 *UNSATISFIED is retriable in the sense that running `ensure` again may succeed if the user provides the keys.
 
+## Headless Mode: the `CI` Environment Variable
+
+Setting `CI` — to any value, including the empty string — puts envseal in headless mode. Commands that would otherwise prompt (`ensure`, `set`, the `run` confirmation) fail immediately with `SEP_NO_INTERACTIVE_SURFACE` and exit code 4 instead of blocking on a surface nobody is watching. A headless pipeline therefore fails in seconds with a documented code; it never hangs on a hidden prompt.
+
+The one way to proceed headlessly is `envseal run`'s own confirmation bypass: `--yes` or `ENVSEAL_ASSUME_YES=1` pre-approves injecting secrets into the child process. No other binding honours it — over MCP the command comes from the model, and that confirmation is the only control on it (see [`run` confirmation](#run-confirmation)).
+
 ## Commands
 
 ### `envseal init [--host <name>]`
@@ -23,7 +29,7 @@
 Initialize `env.schema.jsonc` at the project root.
 
 **Flags:**
-- `--host <name>` — Override host detection (e.g., `cursor`, `aider`). Without this, auto-detects.
+- `--host <name>` — Override host detection. Valid values: `claude-code`, `cursor`, `continue`, `aider`, `generic`, `unknown`; anything else is rejected with exit 2. When an override is given, the reported tier is what that host id implies, not evidence about this project — `envseal doctor` reports what is actually detected.
 - `--json` — Output as JSON.
 - `--project <path>` — Project root (default: auto-detect).
 

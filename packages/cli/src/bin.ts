@@ -4,7 +4,7 @@ import { findProjectRoot } from '@envseal/core';
 import { EXIT } from './exit-codes.js';
 import { fail } from './output.js';
 import { finish } from './exit.js';
-import { parseArgs } from './cli-utils.js';
+import { parseArgs, commandUsage } from './cli-utils.js';
 import { status } from './commands/status.js';
 import { ensure } from './commands/ensure.js';
 import { set } from './commands/set.js';
@@ -37,6 +37,23 @@ async function main(): Promise<void> {
 
   // Parse global flags
   const parsed = parseArgs(rest);
+
+  // A help request anywhere before the `--` terminator describes the
+  // subcommand and exits 0 without executing it. Before this check,
+  // `envseal ensure -h` ran the real command (exit 4 under CI) and an
+  // interactive `set --help` reached the live browser prompt — a question
+  // about the tool answered with side effects.
+  if (parsed.flags.help === true) {
+    const usage = commandUsage(command);
+    if (usage !== null) {
+      console.log(usage);
+      finish(EXIT.OK);
+      return;
+    }
+    // An unknown command asking for help keeps its existing treatment below:
+    // the unknown-command error plus top-level help, exiting 2.
+  }
+
   const json = parsed.flags.json === true;
   const projectFlag = parsed.flags.project as string | undefined;
 

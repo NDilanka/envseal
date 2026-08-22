@@ -160,6 +160,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
         }
       }
       break;
+    } else if (arg === '-h') {
+      // A help request is a control token, not data. Left in args, it made
+      // `envseal ensure -h` run the real command with '-h' as a stray
+      // positional; bin.ts reads flags.help and prints usage instead.
+      flags.help = true;
     } else {
       args.push(arg);
     }
@@ -167,4 +172,77 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return { flags, args };
+}
+
+/**
+ * Per-subcommand usage, shown when -h/--help appears anywhere before the `--`
+ * terminator. Text mirrors docs/cli-contract.md; every block opens with the
+ * word "Usage" so a caller can assert that help was shown rather than a command
+ * having run.
+ */
+const COMMAND_USAGE: Record<string, string> = {
+  init: `Usage: envseal init [--host <name>] [--json] [--project <path>]
+
+Initialize env.schema.jsonc, declaring every environment-variable reference found by scanning the project.
+
+  --host <name>     Override host detection. Valid values: claude-code, cursor, continue, aider, generic, unknown.
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  ensure: `Usage: envseal ensure [--json] [--project <path>]
+
+Prompt for every missing required key in one pass.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  set: `Usage: envseal set <KEY> [--json] [--project <path>]
+
+Prompt for a single key and store it in the entry's declared sink.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  status: `Usage: envseal status [KEY...] [--json] [--project <path>]
+
+Show which declared keys are present. Never prints values.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  verify: `Usage: envseal verify [KEY...] [--json] [--project <path>]
+
+Run verification probes and report a classified result per key.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  run: `Usage: envseal run [--yes] [--json] [--project <path>] -- <cmd...>
+
+Execute a command with secrets injected into the child environment only.
+Asks for confirmation first; --yes (or ENVSEAL_ASSUME_YES=1) pre-approves it.
+
+  --yes             Skip the confirmation prompt.
+  --json            Output exit code and redacted stdout/stderr as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  doctor: `Usage: envseal doctor [--json] [--project <path>]
+
+Audit the project configuration: detected host and tier, gitignore coverage,
+file permissions, missing required keys.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  revoke: `Usage: envseal revoke <KEY> [--json] [--project <path>]
+
+Remove a key from its sink and report the provider's rotation URL.
+
+  --json            Output as JSON.
+  --project <path>  Project root (default: auto-detect).`,
+  mcp: `Usage: envseal mcp
+
+Start the MCP server over stdio. The host launches this itself; do not run it directly.`,
+};
+
+/**
+ * The usage block for `command`, or null when the command is not one envseal
+ * knows — an unknown command keeps its unknown-command treatment in bin.ts.
+ */
+export function commandUsage(command: string | undefined): string | null {
+  if (command === undefined) return null;
+  return COMMAND_USAGE[command] ?? null;
 }

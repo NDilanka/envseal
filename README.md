@@ -93,6 +93,20 @@ Once published, this becomes `pnpm add -D @envseal/cli` and `npx envseal init`.
 
 `init` scans your source for environment-variable references and writes `env.schema.jsonc`, filling in provider metadata for keys it recognises. `ensure` then prompts for anything missing, in one pass. Values go to `.env` by default (after checking `.gitignore` covers it and git is not already tracking it), or to your OS keychain with `sink: "keychain"` — keychain-stored values are resolved by `envseal run` like dotenv ones, while keeping the plaintext out of the project directory.
 
+## Connect your agent
+
+Provisioning keys is only half of it: your agent asks for them through the broker, so the host has to be able to start the broker. For Claude Code, create `.mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "envseal-mcp": { "command": "envseal-mcp", "args": [] }
+  }
+}
+```
+
+Restart Claude Code afterwards. Copy-pasteable snippets for Cursor, Zed, Codex, Continue and the other hosts are in [docs/hosts/README.md](docs/hosts/README.md); installing the bundled plugin in `plugins/claude-code` on top of the MCP server is what earns tier A.
+
 ## Works with any agent
 
 One protocol, four independent transport bindings. A host needs only one:
@@ -104,7 +118,7 @@ One protocol, four independent transport bindings. A host needs only one:
 | **3. Local HTTP** | `127.0.0.1` REST + token auth | Agents in Python, Go, Rust, or any language that can HTTP | Make an HTTP request |
 | **4. CLI** | `envseal` subcommands, JSON output, exit codes | Any agent (Aider, OpenHands, bash loops, shell-only runners) | Run a command |
 
-Tier 4 makes the claim "works with any agent" true rather than aspirational: an agent that can only shell out can still provision secrets safely.
+Tier 4 makes the claim "works with any agent" true rather than aspirational: an agent that can only shell out can still provision secrets safely. For that agent, [docs/cli-contract.md](docs/cli-contract.md) is the machine contract: exit codes, JSON shapes, and how setting `CI` switches every command to headless behaviour.
 
 ## Protection tiers
 

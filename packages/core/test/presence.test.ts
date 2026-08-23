@@ -120,6 +120,10 @@ describe('presence', () => {
   const KC_VALUE = 'sk-test-presence-RoundTrip9xQ';
   const sinksOf = (...keys: string[]) => new Map(keys.map((k) => [k, 'keychain']));
 
+  // Every test here spawns powershell several times (DPAPI encrypt/decrypt per
+  // operation). A cold windows runner outran the 5s vitest default on the
+  // project's first CI exposure — passing on dev machines with warm caches —
+  // so these carry explicit headroom rather than relying on runner warmth.
   describe.skipIf(!winReady)('sink-aware resolution (Windows keychain)', () => {
     let paths: ReturnType<typeof projectPaths>;
 
@@ -135,7 +139,7 @@ describe('presence', () => {
       }
     });
 
-    it('reports a stored keychain credential as present via the sink', async () => {
+    it('reports a stored keychain credential as present via the sink', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KC_KEY, asSecret(Buffer.from(KC_VALUE, 'utf8')));
 
       const presence = await resolvePresence(paths, [KC_KEY], { sinks: sinksOf(KC_KEY) });
@@ -146,7 +150,7 @@ describe('presence', () => {
       expect(entry?.value?.toString('utf8')).toBe(KC_VALUE);
     });
 
-    it('reports absent after the credential is removed', async () => {
+    it('reports absent after the credential is removed', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KC_KEY, asSecret(Buffer.from(KC_VALUE, 'utf8')));
       await keychainSink.remove(paths, KC_KEY);
 
@@ -158,7 +162,7 @@ describe('presence', () => {
       expect(entry?.value).toBeNull();
     });
 
-    it('does not fall back to .env for a keychain-declared key', async () => {
+    it('does not fall back to .env for a keychain-declared key', { timeout: 30_000 }, async () => {
       // A keychain-declared key is only resolvable through its declared sink,
       // so a hand-written .env line must not make status claim present.
       writeFileSync(paths.dotenv, `${KC_KEY}=from-dotenv\n`, 'utf8');
@@ -167,7 +171,7 @@ describe('presence', () => {
       expect(presence.get(KC_KEY)?.present).toBe(false);
     });
 
-    it('keeps process.env precedence over the sink', async () => {
+    it('keeps process.env precedence over the sink', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KC_KEY, asSecret(Buffer.from(KC_VALUE, 'utf8')));
       try {
         process.env[KC_KEY] = 'from-process-env';
@@ -178,7 +182,7 @@ describe('presence', () => {
       }
     });
 
-    it('degrades to absent when the sink read throws', async () => {
+    it('degrades to absent when the sink read throws', { timeout: 30_000 }, async () => {
       // Corrupt blob makes read() throw; presence must not propagate it —
       // describe/status answer even when the store is unhappy.
       const credsDir = join(homedir(), 'AppData', 'Local', 'envseal', 'creds');
@@ -189,7 +193,7 @@ describe('presence', () => {
       expect(presence.get(KC_KEY)?.present).toBe(false);
     });
 
-    it('Broker.describe sees the stored credential and revoke clears it', async () => {
+    it('Broker.describe sees the stored credential and revoke clears it', { timeout: 30_000 }, async () => {
       const broker = new Broker({ root: tmpDir });
       try {
         await broker.declare({

@@ -21,14 +21,18 @@ describe('native-dialog prompter', () => {
   });
 
   describe.skipIf(process.platform === 'win32')('POSIX adapter (osascript/zenity chain)', () => {
-    it('available() returns a boolean without throwing', async () => {
+    // Cold-starting osascript/zenity on a CI runner can outlast the 5s default.
+    it('available() returns a boolean without throwing', { timeout: 30_000 }, async () => {
       const result = await new NativePrompter().available();
       expect(typeof result).toBe('boolean');
     });
   });
 
   describe.skipIf(process.platform !== 'win32')('Windows adapter (powershell)', () => {
-    it('available() returns a boolean without throwing', async () => {
+    // A cold powershell.exe spawn takes seconds on a windows runner — the
+    // first CI exposure of this test timed out at the 5s default while
+    // passing on every dev machine that had a warm powershell.
+    it('available() returns a boolean without throwing', { timeout: 30_000 }, async () => {
       const result = await new NativePrompter().available();
       expect(typeof result).toBe('boolean');
     });

@@ -26,6 +26,10 @@ function commandAvailable(cmd: string): boolean {
 }
 
 describe('keychain sink round-trip', () => {
+  // Every test spawns the platform store helper several times (powershell/
+  // DPAPI on Windows, security on macOS, secret-tool on Linux). Cold CI
+  // runners outran the 5s vitest default on first exposure — passing on dev
+  // machines with warm caches — so each carries explicit headroom.
   let tmpDir: string;
   let paths: ReturnType<typeof projectPaths>;
 
@@ -46,32 +50,32 @@ describe('keychain sink round-trip', () => {
   });
 
   describe.skipIf(process.platform !== 'win32')('Windows DPAPI blob', () => {
-    it('write then read round-trips the value', async () => {
+    it('write then read round-trips the value', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
       const read = await keychainSink.read(paths, KEY);
       expect(read).not.toBeNull();
       expect(read?.toString('utf8')).toBe(VALUE);
     });
 
-    it('read on an absent key returns null', async () => {
+    it('read on an absent key returns null', { timeout: 30_000 }, async () => {
       const read = await keychainSink.read(paths, KEY);
       expect(read).toBeNull();
     });
 
-    it('remove deletes the blob, then read returns null and remove reports false', async () => {
+    it('remove deletes the blob, then read returns null and remove reports false', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
       expect(await keychainSink.remove(paths, KEY)).toBe(true);
       expect(await keychainSink.read(paths, KEY)).toBeNull();
       expect(await keychainSink.remove(paths, KEY)).toBe(false);
     });
 
-    it('read throws on a corrupt (non-hex) blob instead of pretending absence', async () => {
+    it('read throws on a corrupt (non-hex) blob instead of pretending absence', { timeout: 30_000 }, async () => {
       mkdirSync(windowsCredsDir(), { recursive: true });
       writeFileSync(join(windowsCredsDir(), KEY), 'not-a-hex-dpapi-blob', 'utf8');
       await expect(keychainSink.read(paths, KEY)).rejects.toThrow(/not a hex DPAPI blob/);
     });
 
-    it('read throws on an empty blob instead of pretending absence', async () => {
+    it('read throws on an empty blob instead of pretending absence', { timeout: 30_000 }, async () => {
       mkdirSync(windowsCredsDir(), { recursive: true });
       writeFileSync(join(windowsCredsDir(), KEY), '', 'utf8');
       await expect(keychainSink.read(paths, KEY)).rejects.toThrow(/is empty/);
@@ -81,17 +85,17 @@ describe('keychain sink round-trip', () => {
   describe.skipIf(process.platform !== 'darwin' || !commandAvailable('security'))(
     'macOS security',
     () => {
-      it('write then read round-trips the value', async () => {
+      it('write then read round-trips the value', { timeout: 30_000 }, async () => {
         await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
         const read = await keychainSink.read(paths, KEY);
         expect(read?.toString('utf8')).toBe(VALUE);
       });
 
-      it('read on an absent key returns null', async () => {
+      it('read on an absent key returns null', { timeout: 30_000 }, async () => {
         expect(await keychainSink.read(paths, KEY)).toBeNull();
       });
 
-      it('remove deletes the entry, then read returns null and remove reports false', async () => {
+      it('remove deletes the entry, then read returns null and remove reports false', { timeout: 30_000 }, async () => {
         await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
         expect(await keychainSink.remove(paths, KEY)).toBe(true);
         expect(await keychainSink.read(paths, KEY)).toBeNull();
@@ -102,17 +106,17 @@ describe('keychain sink round-trip', () => {
 
   const linuxReady = process.platform === 'linux' && commandAvailable('secret-tool');
   describe.skipIf(!linuxReady)('Linux secret-tool', () => {
-    it('write then read round-trips the value', async () => {
+    it('write then read round-trips the value', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
       const read = await keychainSink.read(paths, KEY);
       expect(read?.toString('utf8')).toBe(VALUE);
     });
 
-    it('read on an absent key returns null', async () => {
+    it('read on an absent key returns null', { timeout: 30_000 }, async () => {
       expect(await keychainSink.read(paths, KEY)).toBeNull();
     });
 
-    it('remove deletes the entry, then read returns null and remove reports false', async () => {
+    it('remove deletes the entry, then read returns null and remove reports false', { timeout: 30_000 }, async () => {
       await keychainSink.write(paths, KEY, asSecret(Buffer.from(VALUE, 'utf8')));
       expect(await keychainSink.remove(paths, KEY)).toBe(true);
       expect(await keychainSink.read(paths, KEY)).toBeNull();

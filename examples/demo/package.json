@@ -1,0 +1,7 @@
+{
+  "name": "envseal-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable end-to-end demo of envseal: init -> set -> ensure --check -> run -> status."
+}

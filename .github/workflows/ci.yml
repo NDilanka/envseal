@@ -61,6 +61,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:portability
 
+  # The examples/demo walk-through, executed against the built CLI so the
+  # documented five-command flow cannot silently rot (init -> gate fails ->
+  # set -> gate passes -> run -> status, sentinel never printed).
+  example-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @envseal/cli build
+      - run: node scripts/probe-example-demo.mjs
+
   lint:
     runs-on: ubuntu-latest
     steps:

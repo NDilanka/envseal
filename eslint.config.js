@@ -21,7 +21,9 @@ export default tseslint.config(
   {
     // Verification probe scripts and build helpers: plain Node ESM, not part of
     // any package's tsconfig, so they need their globals declared explicitly.
-    files: ['**/*.mjs', 'scripts/**/*.js'],
+    // examples/** is the same situation: plain-JS consumer projects a user
+    // copies out of the repo, never built or typechecked here.
+    files: ['**/*.mjs', 'scripts/**/*.js', 'examples/**/*.js'],
     languageOptions: {
       globals: {
         console: 'readonly',

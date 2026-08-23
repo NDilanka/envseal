@@ -98,6 +98,23 @@ function windowsCredsDir(): string {
 }
 
 /**
+ * Windows pipe transports are codepage-bound: node writes UTF-8 into the
+ * child's stdin, but PowerShell 5.1 decodes it with the console's OEM
+ * codepage ([Console]::InputEncoding), and re-encodes stdout the same way.
+ * ASCII survives every codepage; anything else mojibakes — and the mangled
+ * text then gets DPAPI-encrypted, i.e. corrupted at rest.
+ *
+ * Fix: carry the value across BOTH pipes as lowercase hex of its UTF-8
+ * bytes — pure ASCII, immune to codepages — with this marker so read() can
+ * tell the new format from blobs written by the pre-hex code (whose
+ * plaintext is the raw legacy value, ASCII in practice). A legacy blob that
+ * happens to start with the marker AND continues as valid even-length hex
+ * would misdecode; that collision requires a plaintext engineered to look
+ * like our transport and is handled by re-setting the key.
+ */
+const WIN_HEX_PREFIX = 'ENVSEALHEX1:';
+
+/**
  * Editors and shells export a PSModulePath that leads with PowerShell 7 module
  * dirs; those shadow 5.1's Security module (duplicate type data) and
  * ConvertTo-SecureString silently vanishes. Dropping the variable makes 5.1
@@ -228,8 +245,16 @@ class KeychainSink implements Sink {
         undefined,
         childEnv,
       );
-      // [Console]::Out.Write emits the plaintext verbatim; trimming here would
-      // corrupt a value that genuinely ends in whitespace.
+      // The decrypted payload is hex (new format) or the legacy plaintext;
+      // [Console]::Out.Write emits it verbatim, and trimming would corrupt a
+      // legacy value that genuinely ends in whitespace.
+      if (
+        stdout.startsWith(WIN_HEX_PREFIX) &&
+        /^[0-9a-f]*$/.test(stdout.slice(WIN_HEX_PREFIX.length)) &&
+        (stdout.length - WIN_HEX_PREFIX.length) % 2 === 0
+      ) {
+        return asSecret(Buffer.from(stdout.slice(WIN_HEX_PREFIX.length), 'hex'));
+      }
       return asSecret(Buffer.from(stdout, 'utf8'));
     } finally {
       try {
@@ -262,7 +287,8 @@ class KeychainSink implements Sink {
       const escapedPath = join(dir, key).replace(/\\/g, '\\\\');
       // @($input), not [System.Console]::In: the PowerShell console host reads
       // an empty string from a spawned pipe's stdin. The empty checks exit 1 so
-      // that can never again become a silent 0-byte blob.
+      // that can never again become a silent 0-byte blob. The payload is the
+      // hex transport (see WIN_HEX_PREFIX) so the OEM codepage cannot touch it.
       const script = [
         "$ErrorActionPreference = 'Stop'",
         '$value = @($input) -join "`n"',
@@ -277,8 +303,9 @@ class KeychainSink implements Sink {
 
       const childEnv = childEnvWithoutPSModulePath();
 
+      const payload = WIN_HEX_PREFIX + Buffer.from(valueStr, 'utf8').toString('hex');
       try {
-        await execCommand('powershell', ['-NoProfile', '-File', scriptPath], valueStr, childEnv);
+        await execCommand('powershell', ['-NoProfile', '-File', scriptPath], payload, childEnv);
       } finally {
         try {
           unlinkSync(scriptPath);

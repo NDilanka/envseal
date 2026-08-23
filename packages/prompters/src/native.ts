@@ -90,13 +90,21 @@ const winAdapter: NativeAdapter = {
     return commandExists('powershell');
   },
   async promptOne(key, nonce) {
+    // The typed value crosses stdout as hex of its UTF-8 bytes, not as text:
+    // PowerShell 5.1's [Console]::Out encodes with the OEM codepage, which
+    // mojibakes anything non-ASCII before node's utf8 decode ever sees it.
+    // Hex is pure ASCII on both sides of that pipe.
     const psScript =
       `$ErrorActionPreference = 'Stop'\n` +
       `$prompt = @'\n${formatLabel(key)}\n\nNonce: ${nonce}\n'@\n` +
       `$secure = Read-Host -Prompt $prompt -AsSecureString\n` +
       `if ($null -eq $secure) { exit 1 }\n` +
       `$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)\n` +
-      `try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }\n` +
+      `try {\n` +
+      `  $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)\n` +
+      `  $hex = ([Text.Encoding]::UTF8.GetBytes($plain) | ForEach-Object { $_.ToString('x2') }) -join ''\n` +
+      `  [Console]::Out.Write($hex)\n` +
+      `}\n` +
       `finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }\n`;
     // The prompt and whatever the user types live in a 0600 temp file, never argv.
     const tmpPath = join(tmpdir(), `envseal-${randomBytes(8).toString('hex')}.ps1`);
@@ -111,10 +119,11 @@ const winAdapter: NativeAdapter = {
         'powershell',
         ['-NoProfile', '-NonInteractive:$false', '-ExecutionPolicy', 'Bypass', '-File', tmpPath],
       );
-      if (code !== 0 || stdout === '') {
+      const hex = stdout.replace(/\r?\n$/, '');
+      if (code !== 0 || hex === '' || !/^[0-9a-f]+$/.test(hex)) {
         return { outcome: 'cancelled' };
       }
-      return { outcome: 'entered', value: stdout.replace(/\r?\n$/, '') };
+      return { outcome: 'entered', value: Buffer.from(hex, 'hex').toString('utf8') };
     } finally {
       unlinkSync(tmpPath);
     }

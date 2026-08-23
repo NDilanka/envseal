@@ -10,11 +10,8 @@ JetBrains IDEs (IntelliJ, PyCharm, etc.) are **Tier B**: their built-in MCP
 client exposes the seven tools, but nothing intercepts a shell command that
 leaks a value.
 
-One caveat: envseal's detector does not recognize JetBrains IDEs' marker files
-yet, so `envseal doctor` reports `Host: Unknown Host (Tier C)`. The Tier B
-label describes what the protocol binding provides on these IDEs (MCP client
-plus advisory settings), not what doctor prints today — run `envseal doctor`
-after setup to verify your actual tier.
+One note on detection: `envseal doctor` recognizes the `.idea/` project
+directory and reports `Host: JetBrains IDE (Tier B)`.
 
 `[VERIFY: JetBrains MCP config location/format varies by product and version —
 project `.idea/mcp.json`, the shared `mcpServers` layout in IDE settings, and a
@@ -58,7 +55,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs plaintext.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs plaintext.

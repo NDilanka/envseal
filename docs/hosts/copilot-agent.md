@@ -35,9 +35,11 @@ VS Code `settings.json`:
 And, for every Copilot surface, add the instruction file
 (`plugins/generic/AGENTS.md`) to your project root — Copilot reads `AGENTS.md`
 by default. This is the advisory layer that makes Copilot defensibly `B`.
-Note that envseal's detector has no Copilot-specific branch: `envseal doctor`
-reports `Host: Generic Agent (Tier B)` (via the `AGENTS.md` file above), not
-"Copilot".
+`envseal doctor` reports `Host: GitHub Copilot (Tier B)` when
+`.vscode/settings.json` mentions Copilot (the `github.copilot.*` settings
+above qualify). Copilot has no unique project directory of its own, so without
+that settings marker doctor falls through to `Host: Generic Agent (Tier B)`
+via the `AGENTS.md` file above.
 
 ## Keychain recommendation (Tier B)
 
@@ -58,7 +60,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs plaintext.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs plaintext.

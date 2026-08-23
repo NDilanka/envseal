@@ -9,11 +9,9 @@
 Codex CLI is **Tier B**: it gained MCP tool support, but has no interception
 hooks that can stop a leaked shell command from reaching the transcript.
 
-Note that envseal's detector does not recognize Codex CLI's marker files yet,
-so `envseal doctor` reports `Host: Unknown Host (Tier C)`. The Tier B label
-describes what the protocol binding provides on Codex (MCP tools plus advisory
-instructions), not what doctor prints today — run `envseal doctor` after setup
-to verify your actual tier.
+Note on detection: `envseal doctor` recognizes a `.codex/` directory at the
+project root, the global `~/.codex/` config directory, or `CODEX_ROOT`, and
+reports `Host: Codex CLI (Tier B)`.
 
 `[VERIFY: MCP support in Codex CLI is recent and the config schema is still
 moving — some builds read `[mcp_servers.<name>]` from `~/.codex/config.toml`,
@@ -52,7 +50,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs plaintext.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs plaintext.

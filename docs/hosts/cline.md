@@ -29,10 +29,9 @@ for you.]`
 ```
 
 Restart/reload Cline, confirm `envseal-mcp` connects, then run
-`envseal doctor`. envseal's detector does not recognize Cline's marker files
-yet, so it reports `Host: Unknown Host (Tier C)`; the Tier B label describes
-what the protocol binding provides on Cline (MCP plus advisory instructions),
-not what doctor prints today.
+`envseal doctor`. The detector recognizes a `.cline/` directory at the project
+root, the global `~/.cline/` config directory, or `CLINE_ROOT`, and reports
+`Host: Cline (Tier B)`.
 
 ## Keychain recommendation (Tier B)
 
@@ -53,7 +52,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs plaintext.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs plaintext.

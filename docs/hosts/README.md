@@ -21,17 +21,24 @@ before relying on them.
 | openhands | 4 (CLI) | **B** | `AGENTS.md` + terminal tool `[VERIFY]` |
 | shell-agent | 4 (CLI) | **B** | `AGENTS.md` / shell recipe |
 
-> **What `envseal doctor` actually detects:** only claude-code, cursor,
-> continue, and aider are identified by name. claude-code reports Tier A only
-> with visible hook wiring (envseal hooks in `.claude/settings.json`, or the
-> plugin copied to `.claude/plugins/envseal/`); otherwise Tier B. continue is
-> detected as Tier B only with a `.continue/` directory at the *project* root —
-> a global `~/.continue/config.yaml` alone reports `Unknown Host (Tier C)`.
-> Every other host here — windsurf, cline, zed, codex, goose, copilot-agent,
-> jetbrains, openhands, shell-agent — is not detected by name: doctor reports
-> `Unknown Host (Tier C)`, or `Generic Agent (Tier B)` when an `AGENTS.md` is
-> present at the root. The Protection tier column describes what each host's
-> documented setup achieves, not what doctor prints for it.
+> **What `envseal doctor` actually detects:** claude-code, cursor, continue,
+> aider, windsurf, cline, zed, codex, jetbrains, goose, and copilot are
+> identified by name. Project-root markers: `.cursor/`, `.continue/`,
+> `.windsurf/`, `.cline/`, `.zed/`, `.codex/`, `.idea/`, `goose.config.yaml` /
+> `.goose/`, aider's `aider.conf.yml`-style files, and `copilot` settings
+> inside `.vscode/settings.json` for copilot. cline, zed, codex and goose are
+> also detected via global config directories under your home (or
+> `CLINE_ROOT` / `ZED_EDITOR` / `CODEX_ROOT` / `GOOSE_ROOT`), windsurf via
+> `~/.codeium/windsurf/`. claude-code reports Tier A only with visible hook
+> wiring (envseal hooks in `.claude/settings.json`, or the plugin copied to
+> `.claude/plugins/envseal/`); otherwise Tier B. continue is detected only via
+> a `.continue/` directory at the *project* root — a global
+> `~/.continue/config.yaml` alone reports `Unknown Host (Tier C)`, as does any
+> host with none of the markers above; openhands and shell-agent have no
+> host-specific detection, so they report `Unknown Host (Tier C)` — or
+> `Generic Agent (Tier B)` when an `AGENTS.md` is present at the root. For the
+> hosts identified by name, doctor prints the protection tier shown in the
+> table; the column also describes what each host's documented setup achieves.
 
 ## Tiers
 

@@ -594,7 +594,9 @@ describe('init: --host validation and first-run guidance', () => {
     const r = runCli(tempDir, ['init', '--host', 'vscode', '--project', tempDir]);
     expect(r.exitCode, r.stdout).toBe(2);
     expect(r.stderr).toContain("unknown --host 'vscode'");
-    expect(r.stderr).toContain('claude-code, cursor, continue, aider, generic, unknown');
+    expect(r.stderr).toContain(
+      'claude-code, cursor, continue, aider, windsurf, cline, zed, codex, jetbrains, goose, copilot, generic, unknown',
+    );
     // Rejected before any filesystem work: no manifest may appear.
     expect(existsSync(join(tempDir, 'env.schema.jsonc'))).toBe(false);
   });

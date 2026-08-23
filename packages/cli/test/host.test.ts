@@ -12,10 +12,21 @@ describe('host detection', () => {
     // repo's own host markers (.claude/, AGENTS.md, ...), so detection can pass
     // for the wrong reason, and a failed rmSync leaves dirs in the source tree.
     tempDir = mkdtempSync(join(tmpdir(), 'envseal-test-host-'));
+    // Global markers live under the real homedir (~/.codex, ~/.cline, ...), so
+    // whatever the developer happens to have installed must not leak into the
+    // fixture: os.homedir() reads USERPROFILE (Windows) / HOME (POSIX) per
+    // call, and pinning both to the temp dir makes every fixture's "home"
+    // empty unless the test creates the marker itself.
+    vi.stubEnv('USERPROFILE', tempDir);
+    vi.stubEnv('HOME', tempDir);
     // Temporarily remove env vars that would interfere with detection
     vi.stubEnv('CLAUDECODE', undefined);
     vi.stubEnv('CURSOR_WORKSPACE', undefined);
     vi.stubEnv('CURSOR_VERSION', undefined);
+    vi.stubEnv('CLINE_ROOT', undefined);
+    vi.stubEnv('ZED_EDITOR', undefined);
+    vi.stubEnv('CODEX_ROOT', undefined);
+    vi.stubEnv('GOOSE_ROOT', undefined);
   });
 
   afterEach(() => {
@@ -67,6 +78,130 @@ describe('host detection', () => {
     const host = detectHost(tempDir);
     expect(host.id).toBe('aider');
     expect(host.tier).toBe('C');
+  });
+
+  it('detects Windsurf (Tier B) by .windsurf directory', () => {
+    const windsurfDir = join(tempDir, '.windsurf');
+    mkdirSync(windsurfDir, { recursive: true });
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('windsurf');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/\.windsurf\//);
+  });
+
+  it('detects Cline (Tier B) by .cline directory', () => {
+    const clineDir = join(tempDir, '.cline');
+    mkdirSync(clineDir, { recursive: true });
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('cline');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/\.cline/);
+  });
+
+  it('detects Cline (Tier B) via CLINE_ROOT', () => {
+    vi.stubEnv('CLINE_ROOT', tempDir);
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('cline');
+    expect(host.tier).toBe('B');
+  });
+
+  it('detects Zed (Tier B) by .zed directory', () => {
+    const zedDir = join(tempDir, '.zed');
+    mkdirSync(zedDir, { recursive: true });
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('zed');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/\.zed\//);
+  });
+
+  it('detects Zed (Tier B) via ZED_EDITOR', () => {
+    vi.stubEnv('ZED_EDITOR', '1');
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('zed');
+    expect(host.tier).toBe('B');
+  });
+
+  it('detects Codex CLI (Tier B) by .codex directory', () => {
+    const codexDir = join(tempDir, '.codex');
+    mkdirSync(codexDir, { recursive: true });
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('codex');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/\.codex/);
+  });
+
+  it('detects Codex CLI (Tier B) via CODEX_ROOT', () => {
+    vi.stubEnv('CODEX_ROOT', tempDir);
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('codex');
+    expect(host.tier).toBe('B');
+  });
+
+  it('detects JetBrains IDE (Tier B) by .idea directory', () => {
+    const ideaDir = join(tempDir, '.idea');
+    mkdirSync(ideaDir, { recursive: true });
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('jetbrains');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/\.idea\//);
+  });
+
+  it('detects Goose (Tier C) by goose.config.yaml', () => {
+    writeFileSync(join(tempDir, 'goose.config.yaml'), '');
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('goose');
+    expect(host.tier).toBe('C');
+    expect(host.reason).toMatch(/goose\.config\.yaml/);
+  });
+
+  it('detects Goose (Tier C) via GOOSE_ROOT', () => {
+    vi.stubEnv('GOOSE_ROOT', tempDir);
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('goose');
+    expect(host.tier).toBe('C');
+  });
+
+  it('detects Copilot (Tier B) by Copilot settings in .vscode/settings.json', () => {
+    mkdirSync(join(tempDir, '.vscode'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.vscode', 'settings.json'),
+      JSON.stringify({ 'github.copilot.enable': { '*': true } }),
+    );
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('copilot');
+    expect(host.tier).toBe('B');
+    expect(host.reason).toMatch(/settings\.json/);
+  });
+
+  it('does not claim Copilot from a .vscode/settings.json that never mentions it', () => {
+    mkdirSync(join(tempDir, '.vscode'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.vscode', 'settings.json'),
+      JSON.stringify({ 'editor.tabSize': 2 }),
+    );
+    writeFileSync(join(tempDir, 'AGENTS.md'), '');
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('generic');
+  });
+
+  it('prefers a host-specific marker over AGENTS.md', () => {
+    mkdirSync(join(tempDir, '.zed'), { recursive: true });
+    writeFileSync(join(tempDir, 'AGENTS.md'), '');
+
+    const host = detectHost(tempDir);
+    expect(host.id).toBe('zed');
   });
 
   it('detects generic agent (Tier B) by AGENTS.md', () => {

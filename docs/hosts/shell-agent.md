@@ -70,7 +70,7 @@ value just like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On a bare
-shell agent prefer keychain for high-value keys you want off disk, and dotenv
-when the command needs the value.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On a bare shell agent prefer keychain for
+high-value keys you want off disk, and dotenv when the command needs the value.

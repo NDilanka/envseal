@@ -35,10 +35,9 @@ mkdir -p .windsurf
 ```
 
 Restart Windsurf, then confirm the server appears under MCP and run
-`envseal doctor`. envseal's detector does not recognize Windsurf's marker files
-yet, so it reports `Host: Unknown Host (Tier C)`; the Tier B label describes
-what the protocol binding provides on Windsurf (MCP plus advisory rules), not
-what doctor prints today.
+`envseal doctor`. The detector recognizes a `.windsurf/` directory at the
+project root or the global `~/.codeium/windsurf/` config directory and reports
+`Host: Windsurf (Tier B)`.
 
 ## Keychain recommendation (Tier B)
 
@@ -59,7 +58,8 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command — or other tooling that reads `.env` — needs the value.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command — or other tooling that reads
+`.env` — needs the value.

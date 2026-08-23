@@ -8,7 +8,21 @@ import { finish } from '../exit.js';
 // The ids detectHost can ever return. --host used to accept any string
 // silently, recording a host detection would never report and printing a tier
 // computed for a fiction.
-const KNOWN_HOST_IDS = ['claude-code', 'cursor', 'continue', 'aider', 'generic', 'unknown'];
+const KNOWN_HOST_IDS = [
+  'claude-code',
+  'cursor',
+  'continue',
+  'aider',
+  'windsurf',
+  'cline',
+  'zed',
+  'codex',
+  'jetbrains',
+  'goose',
+  'copilot',
+  'generic',
+  'unknown',
+];
 
 export async function init(
   root: string,

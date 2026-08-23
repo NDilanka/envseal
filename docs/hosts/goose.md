@@ -31,9 +31,10 @@ mcp:
       cmd: envseal-mcp
 ```
 
-Confirm the tools appear in the session, then run `envseal doctor` — expect
-`Unknown Host (Tier C)`: there is no goose-specific detection, so it will not
-report "goose".
+Confirm the tools appear in the session, then run `envseal doctor` — it
+recognizes `goose.config.yaml`, a `.goose/` directory, the global
+`~/.config/goose/` directory, or `GOOSE_ROOT`, and reports
+`Host: Goose (Tier C)`.
 
 ## Keychain recommendation (Tier C)
 
@@ -53,7 +54,7 @@ touches disk: the value goes to the OS-backed store and nothing is written to
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier C
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs the value.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier C prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs the value.

@@ -47,6 +47,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. Weigh
-dotenv's plaintext on disk against Tier B's leak risk.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. Weigh dotenv's plaintext on disk against
+Tier B's leak risk.

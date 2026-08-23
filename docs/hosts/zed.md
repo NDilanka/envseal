@@ -8,11 +8,9 @@
 
 Zed is **Tier B**: it speaks MCP but has no interception hooks.
 
-One caveat: envseal's detector does not recognize Zed's marker files yet, so
-`envseal doctor` reports `Host: Unknown Host (Tier C)`. The Tier B label
-describes what the protocol binding provides on Zed (MCP plus advisory
-instructions), not what doctor prints today — run `envseal doctor` after setup
-to verify your actual tier.
+One note on detection: `envseal doctor` recognizes a `.zed/` directory at the
+project root, the global Zed config directories (`~/.config/zed/`, `~/.zed/`),
+or `ZED_EDITOR`, and reports `Host: Zed (Tier B)`.
 
 `[VERIFY: Zed's MCP config has changed between versions — older builds used a
 `mcp` block in `settings.json`, newer ones moved toward a dedicated
@@ -55,7 +53,7 @@ like a dotenv one:
 }
 ```
 
-The `sink: "keychain"` entry above is valid and stores the value; until
-read-back ships, `dotenv` is the only sink `envseal run` can resolve. On Tier B
-prefer keychain for high-value keys you want off disk, and dotenv when the
-command needs plaintext.
+The `sink: "keychain"` entry above is valid and — as noted above — resolves
+too, as do the provider sinks (`vault`, `1password`, `doppler`, `sops`), each
+delegating to its provider CLI. On Tier B prefer keychain for high-value keys
+you want off disk, and dotenv when the command needs plaintext.

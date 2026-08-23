@@ -185,7 +185,7 @@ const COMMAND_USAGE: Record<string, string> = {
 
 Initialize env.schema.jsonc, declaring every environment-variable reference found by scanning the project.
 
-  --host <name>     Override host detection. Valid values: claude-code, cursor, continue, aider, generic, unknown.
+  --host <name>     Override host detection. Valid values: claude-code, cursor, continue, aider, windsurf, cline, zed, codex, jetbrains, goose, copilot, generic, unknown.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
   ensure: `Usage: envseal ensure [--check] [--json] [--project <path>]

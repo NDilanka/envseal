@@ -16,6 +16,7 @@
     "@envseal/registry": "workspace:*"
   },
   "devDependencies": {
+    "@envseal/mcp-server": "workspace:*",
     "esbuild": "latest",
     "tsx": "latest",
     "typescript": "^5.7.2",

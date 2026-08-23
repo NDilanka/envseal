@@ -16,7 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ['20', '22']
+        # 20 dropped: the pinned pnpm needs node:sqlite (>= 22.13), so a 20
+        # leg dies in setup-node before any script of ours runs.
+        node: ['22', '24']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

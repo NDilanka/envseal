@@ -5,7 +5,10 @@ import { runWithSecrets } from '../src/exec.js';
 
 describe('exec', () => {
   describe('runWithSecrets', () => {
-    it('redacts injected secrets from stdout', async () => {
+    // Every test spawns a child process (powershell/sh, curl). Cold CI
+    // runners outran the 5s vitest default twice before this landed; same
+    // treatment as the keychain/presence/native suites.
+    it('redacts injected secrets from stdout', { timeout: 30_000 }, async () => {
       const value = asSecret(Buffer.from('secret-api-key-12345', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
 
@@ -23,7 +26,7 @@ describe('exec', () => {
       expect(result.stdout).not.toContain('secret-api-key-12345');
     });
 
-    it('requires confirmation when onConfirm is not provided and command not approved', async () => {
+    it('requires confirmation when onConfirm is not provided and command not approved', { timeout: 30_000 }, async () => {
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
 
@@ -40,7 +43,7 @@ describe('exec', () => {
       }
     });
 
-    it('throws SEP_CONFIRMATION_DENIED when onConfirm returns false', async () => {
+    it('throws SEP_CONFIRMATION_DENIED when onConfirm returns false', { timeout: 30_000 }, async () => {
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
 
@@ -57,7 +60,7 @@ describe('exec', () => {
       }
     });
 
-    it('detects network egress for curl', async () => {
+    it('detects network egress for curl', { timeout: 30_000 }, async () => {
       const confirmed = { value: false };
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
@@ -76,7 +79,7 @@ describe('exec', () => {
       expect(confirmed.value).toBe(true);
     });
 
-    it('detects network egress for URL in arguments', async () => {
+    it('detects network egress for URL in arguments', { timeout: 30_000 }, async () => {
       const confirmed = { value: false };
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
@@ -95,7 +98,7 @@ describe('exec', () => {
       expect(confirmed.value).toBe(true);
     });
 
-    it('does not flag network egress for safe commands', async () => {
+    it('does not flag network egress for safe commands', { timeout: 30_000 }, async () => {
       const confirmed = { value: true };
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
@@ -114,7 +117,7 @@ describe('exec', () => {
       expect(confirmed.value).toBe(false);
     });
 
-    it('handles timeout', async () => {
+    it('handles timeout', { timeout: 30_000 }, async () => {
       const value = asSecret(Buffer.from('secret-value', 'utf8'));
       const secrets = new Map([['TEST_KEY', value]]);
 

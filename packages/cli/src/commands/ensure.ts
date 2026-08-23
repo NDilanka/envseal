@@ -5,7 +5,7 @@ import { SepError } from '@envseal/protocol';
 import { createBroker, outcomeForKey } from '../cli-utils.js';
 import { finish } from '../exit.js';
 
-export async function ensure(root: string, json: boolean): Promise<void> {
+export async function ensure(root: string, json: boolean, check = false): Promise<void> {
   try {
     // A project without env.schema.jsonc declares NOTHING, but describe()
     // reports that exactly like an empty manifest: zero missing keys, so this
@@ -21,7 +21,8 @@ export async function ensure(root: string, json: boolean): Promise<void> {
     // done, so it may not.) The message below differs from the missing-keys
     // failure ("✗ Only N/M keys set" / satisfied:false), so scripts can tell
     // the two apart by text as well as code.
-    if (loadManifest(projectPaths(root)) === null) {
+    const manifest = loadManifest(projectPaths(root));
+    if (manifest === null) {
       throw new SepError({
         code: 'SEP_NOT_DECLARED',
         userMessage:
@@ -34,6 +35,38 @@ export async function ensure(root: string, json: boolean): Promise<void> {
 
     // Use missingRequired array from ManifestStatus
     const missingRequired = status.missingRequired;
+
+    // --check is the headless gate: it reports and exits, never requests.
+    // Skipping broker.request() is what makes it prompt-free — not just under
+    // CI (where a request would exit 4) but in an interactive terminal too,
+    // where a request would open a dialog the caller of a *check* never asked
+    // for. Total counts required entries only: an optional key being absent
+    // is not a failure.
+    if (check) {
+      const total = manifest.entries.filter((e) => e.required).length;
+      const missing = missingRequired.length;
+      if (!json) {
+        if (missing === 0) {
+          console.log('✓ All required keys are satisfied');
+        } else {
+          console.log(`✗ ${missing} of ${total} required key(s) missing:`);
+          for (const key of missingRequired) {
+            console.log(`  ${key}`);
+          }
+        }
+      } else {
+        emit(json, '', {
+          satisfied: missing === 0,
+          keysSet: total - missing,
+          total,
+          missing: missingRequired,
+        });
+      }
+      if (missing > 0) {
+        finish(EXIT.UNSATISFIED);
+      }
+      return;
+    }
 
     if (missingRequired.length === 0) {
       if (!json) {

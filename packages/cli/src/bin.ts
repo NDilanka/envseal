@@ -74,7 +74,7 @@ async function main(): Promise<void> {
       }
 
       case 'ensure': {
-        await ensure(root, json);
+        await ensure(root, json, parsed.flags.check === true);
         break;
       }
 
@@ -157,7 +157,8 @@ Usage: envseal <command> [options]
 
 Commands:
   init [--host <name>]          Initialize env.schema.jsonc
-  ensure                        Prompt for all missing required keys
+  ensure [--check]             Prompt for all missing required keys
+                               (--check: report only, exit 0/1, never prompt)
   set <KEY>                     Prompt for a single key
   status [KEYS...]              Show status of keys
   verify [KEYS...]              Run verification probes

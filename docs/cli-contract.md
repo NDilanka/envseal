@@ -22,6 +22,8 @@ Setting `CI` — to any value, including the empty string — puts envseal in he
 
 The one way to proceed headlessly is `envseal run`'s own confirmation bypass: `--yes` or `ENVSEAL_ASSUME_YES=1` pre-approves injecting secrets into the child process. No other binding honours it — over MCP the command comes from the model, and that confirmation is the only control on it (see [`run` confirmation](#run-confirmation)).
 
+`ensure --check` is the headless counterpart of prompting: it never requests anything, so it needs neither a surface nor a bypass — it reports satisfaction and exits 0/1. The full pipeline recipe (gate, run, and what envseal deliberately does not do on a runner) is [docs/ci.md](ci.md).
+
 ## Commands
 
 ### `envseal init [--host <name>]`
@@ -55,11 +57,12 @@ Initialize `env.schema.jsonc` at the project root.
 
 ---
 
-### `envseal ensure`
+### `envseal ensure [--check]`
 
 Prompt for every missing required key in one pass.
 
 **Flags:**
+- `--check` — Never prompt, even interactively. Report whether every required key is satisfied and exit 0 (satisfied) or 1 (missing). This is the CI gate: it makes no ticket request at all, so it cannot block on a surface nobody is watching and works with `CI` set. Optional entries are not part of the gate — `total` counts required keys only.
 - `--json` — Output as JSON.
 - `--project <path>` — Project root.
 
@@ -72,11 +75,23 @@ Prompt for every missing required key in one pass.
 }
 ```
 
+With `--check`, the JSON names what a pipeline needs to provision:
+```json
+{
+  "satisfied": false,
+  "keysSet": 0,
+  "total": 2,
+  "missing": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+}
+```
+(`keysSet`/`total` mean required keys present / required keys declared — not, as in the prompting mode, keys stored by this run / keys requested by it.)
+
 **Exit codes:**
 - 0 — All required keys are present.
-- 1 — One or more required keys are still missing after the operation.
+- 1 — One or more required keys are still missing after the operation (with `--check`: still missing, full stop).
+- 2 — No `env.schema.jsonc` in this project.
 - 3 — User cancelled.
-- 4 — No interactive surface available.
+- 4 — No interactive surface available (never happens with `--check`).
 
 ---
 

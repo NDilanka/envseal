@@ -408,6 +408,61 @@ describe('ensure: uninitialized project', () => {
   });
 });
 
+// --check is the headless gate: it reports and exits without ever opening a
+// ticket. Each case pins that by exit code alone — a stray request under CI
+// would exit 4, a stray request over a piped stdin would too, and a prompt
+// would hit the 20s watchdog.
+describe('ensure --check: report, never prompt', () => {
+  beforeEach(() => {
+    writeManifest(tempDir, [{ key: 'CHECK_A' }, { key: 'CHECK_B', required: false }]);
+  });
+
+  it('exits 0 satisfied under CI when required keys are present', () => {
+    writeFileSync(join(tempDir, '.env'), 'CHECK_A=present\n');
+    const r = runCli(tempDir, ['ensure', '--check', '--project', tempDir, '--json'], { CI: '1' });
+    expect(r.exitCode, r.stderr).toBe(0);
+    // Optional entries are not part of the gate: total counts required only.
+    expect(JSON.parse(r.stdout)).toEqual({
+      satisfied: true,
+      keysSet: 1,
+      total: 1,
+      missing: [],
+    });
+  });
+
+  it('exits 1 with the missing key list under CI — no prompting, exit 4, or hang', () => {
+    const r = runCli(tempDir, ['ensure', '--check', '--project', tempDir, '--json'], { CI: '1' });
+    expect(r.exitCode, r.stderr).toBe(1);
+    expect(JSON.parse(r.stdout)).toEqual({
+      satisfied: false,
+      keysSet: 0,
+      total: 1,
+      missing: ['CHECK_A'],
+    });
+  });
+
+  it('does not prompt even without CI (piped stdin would make a request exit 4)', () => {
+    const r = runCli(tempDir, ['ensure', '--check', '--project', tempDir, '--json']);
+    expect(r.exitCode, r.stderr).toBe(1);
+    expect(JSON.parse(r.stdout).satisfied).toBe(false);
+  });
+
+  it('human output names the missing keys', () => {
+    const r = runCli(tempDir, ['ensure', '--check', '--project', tempDir]);
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toContain('1 of 1 required key(s) missing');
+    expect(r.stdout).toContain('CHECK_A');
+    expect(r.stdout).not.toContain('CHECK_B');
+  });
+
+  it('keeps the exit-2 honesty on a project with no manifest', () => {
+    rmSync(join(tempDir, 'env.schema.jsonc'));
+    const r = runCli(tempDir, ['ensure', '--check', '--project', tempDir, '--json'], { CI: '1' });
+    expect(r.exitCode, r.stderr).toBe(2);
+    expect(JSON.parse(r.stdout).code).toBe('SEP_NOT_DECLARED');
+  });
+});
+
 describe('revoke: documented exit codes', () => {
   beforeEach(() => {
     writeManifest(tempDir, [{ key: 'REVOKE_ME' }]);
@@ -515,6 +570,7 @@ describe('help: -h/--help describes without executing', () => {
     expect(r.exitCode, r.stderr).toBe(0);
     expect(r.stdout).toContain('Usage');
     expect(r.stdout).toContain('envseal ensure');
+    expect(r.stdout).toContain('--check');
     // The command did not run: no outcome object, no missing-surface complaint.
     expect(r.stdout).not.toContain('satisfied');
     expect(r.stdout + r.stderr).not.toContain('SEP_NO_INTERACTIVE_SURFACE');

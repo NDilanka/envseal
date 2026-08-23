@@ -188,10 +188,12 @@ Initialize env.schema.jsonc, declaring every environment-variable reference foun
   --host <name>     Override host detection. Valid values: claude-code, cursor, continue, aider, generic, unknown.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
-  ensure: `Usage: envseal ensure [--json] [--project <path>]
+  ensure: `Usage: envseal ensure [--check] [--json] [--project <path>]
 
 Prompt for every missing required key in one pass.
 
+  --check           Never prompt, even interactively: report whether every required
+                    key is present and exit 0 or 1 accordingly. Safe under CI.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
   set: `Usage: envseal set <KEY> [--json] [--project <path>]

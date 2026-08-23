@@ -118,7 +118,7 @@ One protocol, four independent transport bindings. A host needs only one:
 | **3. Local HTTP** | `127.0.0.1` REST + token auth | Agents in Python, Go, Rust, or any language that can HTTP | Make an HTTP request |
 | **4. CLI** | `envseal` subcommands, JSON output, exit codes | Any agent (Aider, OpenHands, bash loops, shell-only runners) | Run a command |
 
-Tier 4 makes the claim "works with any agent" true rather than aspirational: an agent that can only shell out can still provision secrets safely. For that agent, [docs/cli-contract.md](docs/cli-contract.md) is the machine contract: exit codes, JSON shapes, and how setting `CI` switches every command to headless behaviour.
+Tier 4 makes the claim "works with any agent" true rather than aspirational: an agent that can only shell out can still provision secrets safely. For that agent, [docs/cli-contract.md](docs/cli-contract.md) is the machine contract: exit codes, JSON shapes, and how setting `CI` switches every command to headless behaviour. For pipelines specifically, [docs/ci.md](docs/ci.md) covers the provisioning-vs-consumption model, the `envseal ensure --check` gate, and the exact scope of `ENVSEAL_ASSUME_YES`.
 
 ## Protection tiers
 
@@ -151,6 +151,7 @@ This holds by construction rather than by convention: the model's verbs are decl
 - **[SECURITY.md](SECURITY.md)** — Supported versions and vulnerability reporting.
 - **[docs/threat-model.md](docs/threat-model.md)** — Detailed threat and mitigation analysis.
 - **[docs/residual-risks.md](docs/residual-risks.md)** — Seven risks that remain even with the protocol in place.
+- **[docs/ci.md](docs/ci.md)** — Using envseal on runners: the `ensure --check` gate, `ENVSEAL_ASSUME_YES`, and what stays outside envseal's boundary in CI.
 
 Read the residual risks section. No tool that handles secrets is risk-free, and this one makes no exceptions for marketing.
 

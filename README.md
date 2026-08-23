@@ -91,6 +91,8 @@ node /path/to/envseal/packages/cli/dist/bin.js ensure
 
 Once published, this becomes `pnpm add -D @envseal/cli` and `npx envseal init`.
 
+For a runnable walk-through of the whole lifecycle (`init` → `ensure --check` → `set` → `run` → `status`), see [examples/demo](examples/demo/README.md) — CI executes that exact flow on every push.
+
 `init` scans your source for environment-variable references and writes `env.schema.jsonc`, filling in provider metadata for keys it recognises. `ensure` then prompts for anything missing, in one pass. Values go to `.env` by default (after checking `.gitignore` covers it and git is not already tracking it), or to your OS keychain with `sink: "keychain"` — keychain-stored values are resolved by `envseal run` like dotenv ones, while keeping the plaintext out of the project directory.
 
 ## Connect your agent
@@ -129,6 +131,20 @@ envseal offers different levels of protection depending on your host. `envseal d
 - **Tier C** — Protocol only. Same recommendation, stated more plainly.
 
 **On Tier B and C, a shell command can still exfiltrate a value.** The broker requires confirmation for every command and adds a network egress warning when the command can reach the network, but a user who clicks through defeats the control. This is not a limitation of the system; it is inherent to any tool that lets an agent execute arbitrary code. envseal's guarantees are structural at the protocol level — the model cannot obtain a value through the protocol itself — but the user remains responsible for what code they approve.
+
+## How envseal compares
+
+The pitch in one line: **bring your existing backend, gain transcript-blindness.** envseal is not another vault — it sits in front of the store you already run (`.env`, OS keychain, Vault, 1Password, Doppler, SOPS) and adds the piece none of them have: a protocol under which the agent provisions and uses secrets without the value ever crossing its transcript.
+
+|  | envseal | dotenvx / dotenv-vault | teller | aws-vault |
+|---|---|---|---|---|
+| **Value crosses the agent's transcript?** | No — structurally; there is no protocol verb whose result carries a value | Yes if the agent reads the decrypted env | Yes — plaintext lands in process env | Yes (AWS creds in env) |
+| **Per-use consent for injection** | Every `env_use` command is confirmed, with the full command and a network-egress warning shown | — | — | — |
+| **Post-hoc redaction** | stdout/stderr of injected commands are redacted of secret substrings | — | — | — |
+| **Backends** | dotenv, OS keychain, Vault, 1Password, Doppler, SOPS | its own encrypted `.env` | 30+ providers → env/file | AWS only |
+| **What it manages** | the agent↔secret boundary | file encryption at rest | dev-time aggregation | IAM credential sessions |
+
+dotenvx encrypts well at rest, teller aggregates broadly, aws-vault manages AWS sessions expertly — none of them address the moment an AI agent goes to *use* a secret, which is exactly the moment envseal owns: the value travels `user → secure input surface → broker → sink` and the model sees names, tickets, and redacted status, nothing else.
 
 ## What the model can and cannot do
 

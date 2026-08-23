@@ -40,7 +40,7 @@ Publication is blocked until all of these hold:
   verbatim and produced the documented result, or is explicitly marked unverified.
 - **E5** `npm publish --dry-run` yields correct file lists, `bin` entries, and `exports` for
   every published package; nothing private leaks into the tarball.
-- **E6** CI is green on a real run (it has never executed — there is no remote yet).
+- **E6** CI is green on a real run (runs [32644162967](https://github.com/NDilanka/envseal/actions/runs/32644162967) and [32644732723](https://github.com/NDilanka/envseal/actions/runs/32644732723) on origin/main).
 - **E7** Manual gates M1–M5 (§5) each have a recorded human result.
 - **E8** Residual-risk doc matches what the code actually does — no guarantee is claimed that
   the implementation does not deliver.
@@ -163,9 +163,9 @@ discoveries.
 | U4 | `tty` prompter never exercised with a real terminal | W7 |
 | U5 | Claude Code plugin never loaded in a live session (PLAN T8.4) | M4 |
 | U6 | VS Code extension never loaded in VS Code | M5 |
-| U7 | CI has never run — no remote exists | E6 |
+| U7 | ~~CI has never run — no remote exists~~ resolved: green runs 32644162967, 32644732723 | E6 |
 | U8 | MCP server never connected to a real MCP client | M4 |
-| U9 | Only Windows tested; Linux/macOS unexercised | W1 |
+| U9 | ~~Only Windows tested; Linux/macOS unexercised~~ resolved: CI runs all three OS (see E1/E6) | W1 |
 | U10 | `http-server` leak test never stores a secret, so it asserts nothing | W2 |
 
 ---
@@ -199,15 +199,18 @@ what cannot be is listed as a runbook step, not claimed.
   `.ps1` left behind. **Runbook (human):** in a real interactive PowerShell console run
   `SEP_PREFER_NATIVE=1 envseal set <KEY>`; confirm the input is masked while typing, that
   Enter stores the value, and that Ctrl+C/empty Enter yields `cancelled` (exit 3), not a crash.
-- **M3 — write leg verified live; resolution leg impossible by design.**
-  `scripts/probe-m3-keychain.mjs` stores through the real Broker into a `sink: keychain`
-  entry and asserts: DPAPI blob at `%LOCALAPPDATA%\envseal\creds\<KEY>` is non-empty hex,
-  decrypts back to the canary exactly (DPAPI round-trip), nothing reaches `.env`, and
-  `envseal run --` leaves the child without the value (`UNRESOLVED`). The gate AS WRITTEN
-  ("value retrievable") cannot pass: the sink is write-only (`read()` returns null) — recorded
-  as the documented limitation, not forced. Related honesty gap found by the probe and now
-  documented in `docs/cli-contract.md` + `docs/residual-risks.md`: presence checks consult
-  only env/`.env`, so keychain entries always report `present: false` and `ensure` re-prompts.
+  Include at least one non-ASCII character (e.g. `é` or `🔐`) — the value crosses the pipe as
+  hex of its UTF-8 bytes, so it must round-trip byte-exact (fixed 2026-08-23; previously
+  non-ASCII mojibaked through the OEM-codepage pipe).
+- **M3 — CLOSED (updated 2026-08-23): the sink stores AND resolves.** The original run
+  (2026-08-21) proved only the write leg — DPAPI blob at
+  `%LOCALAPPDATA%\envseal\creds\<KEY>` non-empty hex, decrypts back to the canary exactly,
+  nothing reaches `.env` — and recorded read() as write-only. Commits 84cdc79 and b1acef7
+  closed it: `scripts/probe-m3-keychain.mjs` now drives the full round-trip through the real
+  Broker — store via `envseal set`, presence sink-aware (`status` reports the keychain entry
+  present), `envseal run` injects the resolved value into the child, revoke truthful. The
+  earlier documented limitation ("presence checks consult only env/`.env` so keychain keys
+  report absent and ensure re-prompts") is fixed in code, not just docs.
 - **M4 — artifact-level PASS; interactive remainder runbooked.** Two independent headless
   `claude -p --plugin-dir plugins/claude-code` sessions against a canary `.env` produced
   transcripts with **zero** occurrences of either sentinel (grep counts 0/0 both sessions);
@@ -235,12 +238,12 @@ what cannot be is listed as a runbook step, not claimed.
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| E1 clean-clone build, 3 OS | **Windows: PASS. Linux/macOS: UNVERIFIED (no remote).** | `git clone` to `%TEMP%\envseal-final-clone` → `pnpm install --frozen-lockfile` → build (serial; parallel build died on host `VirtualAlloc` exhaustion, not code) → typecheck → full suite green: 591 tests + 3 portability, 0 failures; `git status --porcelain` empty after build. Linux/macOS evidence requires CI (see E6). |
+| E1 clean-clone build, 3 OS | **PASS — all three OS, on CI.** | Windows locally: `git clone` to `%TEMP%\envseal-final-clone` → `pnpm install --frozen-lockfile` → build (serial; parallel build died on host `VirtualAlloc` exhaustion, not code) → typecheck → full suite green. Linux/macOS via CI runs [32644162967](https://github.com/NDilanka/envseal/actions/runs/32644162967) and [32644732723](https://github.com/NDilanka/envseal/actions/runs/32644732723) (ubuntu-latest/macos-latest/windows-latest × node 22/24: build, typecheck, full test suite, zero-leak, portability all green). CI's first exposures caught two real defects, both fixed and verified: the plugin's missing `@envseal/mcp-server` devDep broke clean-checkout build order (a139eea), and the sops POSIX fake's bash-only `${!#}` failed under dash (8d1f46a). |
 | E2 zero-leak adversarial | **PASS on Windows, current build.** | W2 report + fixes (19ff9bb redact rewrite, 085d62a T3 guard) + re-run on the final tree: `probe-w2-oracle` (3094 tool calls recover only 256 literal dots, `EXACT MATCH: false`), `probe-w2-cli` (sentinel absent from manifest/audit/salt), `probe-w2-sdk` (all four free-text fields → `SEP_VALUE_IN_REQUEST`, no sentinel on disk), `probe-w2-http` (exit 0, sentinel absent everywhere incl. headers), `probe-b9-redact-limit` (4,000,000-byte values redacted from 1 MB haystack, ≤436 ms), mcp-server zero-leak suite drives `dist/bin.js` over real stdio (49 tests). |
-| E3 no Critical/High open | **PASS** (independent cold audit concurred). | Six workstream reports + uncorrelated cold-context audit of `76ffcd4..HEAD`; every previously-open Critical/High re-verified fixed against built artifacts (audit's list: oracle, T3, redact bounds, consent wiring, exit codes, W7 degradation, publishing, hook contract, tier honesty). Audit's N1 (timeout reported as user denial) fixed in cab-… this push: `SEP_TICKET_EXPIRED` with explicit "not a denial" message, proven over raw stdio vs `dist/bin.js`. Known Lows (N4 un-zeroed value on sink-write failure path; N5 `/openapi.json` pre-auth) filed in the final report, none meets the High bar. |
+| E3 no Critical/High open | **PASS** (independent cold audit concurred). | Six workstream reports + uncorrelated cold-context audit of `76ffcd4..HEAD`; every previously-open Critical/High re-verified fixed against built artifacts (audit's list: oracle, T3, redact bounds, consent wiring, exit codes, W7 degradation, publishing, hook contract, tier honesty). Audit's N1 (timeout reported as user denial) fixed in cab-… this push: `SEP_TICKET_EXPIRED` with explicit "not a denial" message, proven over raw stdio vs `dist/bin.js`. Known Lows from the final report are closed as of 2026-08-23: N4 (value zeroed on the sink-write-failure path, try/finally + regression test), N5 (`/openapi.json` now requires the bearer token, 401/200 pinned), W3-07 (printf/echo/sed/awk/grep/backtick/`$(<file)` env-dump shapes denied, benign printf still allowed). |
 | E4 docs commands executed | **PASS for the CLI contract + host docs; per-host GUI installs UNVERIFIED.** | Cold audit executed `init/doctor/status/set/ensure/run/revoke --json` against `dist/bin.js` and matched `docs/cli-contract.md` field-for-field; host-doc snippets tested against the built binary during the B8 sweep (doctor outputs, status exit codes, guard branches). What remains human: installing MCP configs inside real Cursor/Zed/etc. GUIs. |
 | E5 publish dry-run correct | **PASS.** | `pnpm release:dry` → 9/9 tarballs "no workspace:, no maps", preflight passed; `scripts/probe-b1-tarball-install.mjs` → all 9 tarballs `npm install` from a bare dir, pinned export imports, both bins run from an unrelated cwd with no `.envseal/` scatter. Registry round-trip impossible pre-publish (no credentials) — recorded, not claimed. |
-| E6 CI green on real run | **UNVERIFIED — no git remote exists.** | `.github/workflows/ci.yml` (3-OS matrix incl. zero-leak + portability jobs) has never executed. Local Windows equivalents of every job pass. Signing this row requires pushing to a remote and watching one green run. |
+| E6 CI green on real run | **PASS.** | Run [32644162967](https://github.com/NDilanka/envseal/actions/runs/32644162967) (commit a3b8285) and [32644732723](https://github.com/NDilanka/envseal/actions/runs/32644732723) (commit 13ab994) green across the full matrix: build lint portability zero-leak + 3-OS × node 22/24 build/test jobs. Getting there took three fixes, each from a real red run: node-20 matrix legs (a139eea — pinned pnpm needs node:sqlite ≥ 22.13), the dash/bashism sops fake (8d1f46a), and cold-runner powershell test timeouts (a3b8285). |
 | E7 manual gates M1–M5 | **M1 PASS (twice). M4 artifact-level PASS (two sessions, zero canary hits). M2/M3/M5 mechanism-verified; human remainders runbooked.** | M1: prior real-Chrome run + `probe-m1-browser-bridge.mjs` through the kimi web bridge — real Chrome rendered the page, displayed nonce matched, canary round-tripped byte-exact, port refused after. M2: `probe-m2-native` fail-closed paths; typed masked entry runbooked. M3: `probe-m3-keychain` DPAPI round-trip; resolution impossible by design (documented). M4: two headless plugin sessions → 0/0 sentinel grep both transcripts; deny path proven by hook-contract probe 18/18, contract tests, W4 mutation, and a live in-session denial; interactive `env_request` observation runbooked. M5: built extension.js activated under a stub host and driven by the shipped IdePrompter end to end (`probe-m5-extension-host.mjs`) + wire tests; in-editor load runbooked. |
 | E8 residual risks accurate | **PASS.** | Seven risks each match implementation on cold re-read (write-only keychain + presence blindness, HTTP loopback, string-conversion points, staged-temp fallback, double-gated test hooks, env_use user-confirmed egress). SECURITY.md count corrected to seven; PLAN §7.2 annotated (Windows DPAPI files, not Credential Manager). |
 

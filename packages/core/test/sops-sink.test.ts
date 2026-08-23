@@ -279,7 +279,11 @@ describe('sops sink', () => {
       const fake = [
         '#!/bin/sh',
         '# Fake sops for sops-sink.test.ts: transforms the target file in place.',
-        'target="${!#}"',
+        '# Last argument via the portable idiom: bash\'s ${!#} indirection is a',
+        '# bashism that dash silently expands to "" (proved by CI: python got',
+        '# \'\' as its path and died with FileNotFoundError on ubuntu, while the',
+        '# macOS leg — bash-as-sh — passed).',
+        'for target in "$@"; do :; done',
         'case "$1" in',
         '  --encrypt) python3 - "$target" <<\'PY\'',
         'import sys,base64',

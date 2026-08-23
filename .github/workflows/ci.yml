@@ -74,7 +74,10 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @envseal/cli build
+      # Trailing ellipsis: build the CLI AND its workspace dependencies --
+      # filtering to the package alone leaves @envseal/core un-built and tsc
+      # cannot resolve it (the same ordering trap the plugin hit in a139eea).
+      - run: pnpm --filter @envseal/cli... build
       - run: node scripts/probe-example-demo.mjs
 
   lint:

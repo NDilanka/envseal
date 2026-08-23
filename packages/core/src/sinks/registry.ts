@@ -1,9 +1,18 @@
 import { SepError } from '@envseal/protocol';
-import type { ProjectPaths } from '../paths.js';
 import type { Sink } from './types.js';
 import { DotenvSink } from './dotenv.js';
 import { keychainSink } from './keychain.js';
+import { vaultSink } from './vault.js';
+import { onepasswordSink } from './onepassword.js';
+import { dopplerSink } from './doppler.js';
+import { sopsSink } from './sops.js';
 
+/**
+ * Placeholder for sinks with no adapter module at all. The CLI-backed stubs
+ * (vault, onepassword, doppler, sops) refuse because their provider
+ * prerequisite is missing; this one refuses because nobody has written the
+ * sink yet.
+ */
 class UnimplementedSink implements Sink {
   constructor(readonly id: string) {}
 
@@ -36,10 +45,10 @@ class UnimplementedSink implements Sink {
 const sinks = new Map<string, Sink>([
   ['dotenv', new DotenvSink()],
   ['keychain', keychainSink],
-  ['sops', new UnimplementedSink('sops')],
-  ['onepassword', new UnimplementedSink('onepassword')],
-  ['doppler', new UnimplementedSink('doppler')],
-  ['vault', new UnimplementedSink('vault')],
+  ['sops', sopsSink],
+  ['onepassword', onepasswordSink],
+  ['doppler', dopplerSink],
+  ['vault', vaultSink],
   ['external', new UnimplementedSink('external')],
 ]);
 

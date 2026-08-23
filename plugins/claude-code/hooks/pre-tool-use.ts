@@ -71,8 +71,17 @@ const FILE_READERS = new Set([
   'xxd',
   'od',
   'type',
+  // W3-07: sed/awk/grep read files just as `cat` does, but were absent from
+  // this list — so `sed -n 1p <envfile>` and `printf '%s' "$(sed -n 1p
+  // <envfile>)"` sailed through while the `cat` form was blocked.
+  'sed',
+  'awk',
+  'grep',
 ]);
-const SEGMENT_SPLIT_RE = /\s*(?:&&|\|\||;|\||\(|\)|\n)\s*/;
+// W3-07: backticks are command substitution too. Without splitting on them,
+// `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner
+// reader never got a segment of its own to be checked against.
+const SEGMENT_SPLIT_RE = /\s*(?:&&|\|\||;|\||\(|\)|\n|`)\s*/;
 /** Tools that name a file to read or mutate. Kept in sync with the PreToolUse
  *  matcher in hooks/hooks.json — a tool listed in one and not the other is a
  *  hole in the guard. plugin-contract.test.ts reads this list to assert that
@@ -297,6 +306,23 @@ export function decideBash(command: string, declared: Set<string>): Decision {
           allow: false,
           reason:
             `Blocked: \`${head}\` on secret path \`${denied}\` would put its contents in the transcript. ` +
+            'Use `env_describe` for status or `env_verify` to test the key.',
+        };
+      }
+    }
+
+    // W3-07: bash's `$(<file)` redirection shorthand reads a file with no
+    // reader command at all. Segment splitting on the parens surfaces it as a
+    // segment that begins with `<`, so match that shape directly.
+    const shorthand = /^<\s*(.+)$/.exec(segment);
+    if (shorthand !== null) {
+      const target = shorthand[1] ?? '';
+      const token = target.replace(/^['"]+|['"]+$/g, '').replace(/^~/, '');
+      if (isDeniedSecretPath(token)) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: \`$(<${token})\` would put the contents of \`${token}\` in the transcript. ` +
             'Use `env_describe` for status or `env_verify` to test the key.',
         };
       }

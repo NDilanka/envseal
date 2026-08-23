@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { asSecret, SepError } from '@envseal/protocol';
@@ -9,7 +9,8 @@ import { Broker } from '../src/broker.js';
 
 class StubPrompter implements Prompter {
   readonly id = 'loopback-browser' as const;
-  private readonly secretValue: Buffer;
+  /** Exposed so tests can assert on the exact buffer handed to the broker. */
+  readonly secretValue: Buffer;
 
   constructor(secret: string) {
     this.secretValue = Buffer.from(secret, 'utf8');
@@ -207,6 +208,58 @@ describe('Broker', () => {
     const status = await broker.describe();
     const entry = status.entries.find((e) => e.key === 'API_KEY');
     expect(entry?.present).toBe(false);
+
+    broker.dispose();
+  });
+
+  it('zeroes the entered value when the sink write fails', async () => {
+    const sentinel = 'sk-SINKFAIL-DO-NOT-LEAK-abc123xyz789';
+    const prompter = new StubPrompter(sentinel);
+    const broker = new Broker({
+      root: tmpDir,
+      prompter,
+    });
+
+    await broker.declare({
+      entries: [
+        {
+          key: 'TEST_API_KEY',
+          description: 'Test API key',
+          required: true,
+          secret: true,
+        },
+      ],
+    });
+
+    // Force the dotenv sink write to fail: the target exists as a directory,
+    // so the sink's read-then-rename throws SEP_SINK_WRITE_FAILED. StubPrompter
+    // hands out asSecret(buffer) over the SAME buffer, so what it holds is
+    // exactly what the broker had to zero.
+    const paths = projectPaths(tmpDir);
+    mkdirSync(paths.dotenv);
+
+    const ticket = await broker.request({
+      keys: ['TEST_API_KEY'],
+      reason: 'Need key',
+    });
+
+    const outcome = await broker.await({
+      ticket: ticket.ticket,
+      timeoutMs: 5000,
+    });
+
+    // Existing behavior is preserved: the prompt is recorded as failed and the
+    // ticket cancelled — the sink error must not silently become "stored".
+    expect(outcome.state).toBe('cancelled');
+    const audit = readFileSync(paths.audit, 'utf8');
+    expect(audit).toContain('prompt_failed');
+    expect(audit).toContain('SEP_SINK_WRITE_FAILED');
+
+    // The regression: the entered buffer survives unzeroed in the heap on the
+    // sink-write-failure path unless every exit from the value region zeroes.
+    const entered = prompter.secretValue;
+    expect(entered.length).toBeGreaterThan(0);
+    expect(entered.every((b) => b === 0)).toBe(true);
 
     broker.dispose();
   });

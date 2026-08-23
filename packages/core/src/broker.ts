@@ -325,7 +325,15 @@ export class Broker {
 
       for (const result of response.results) {
         const entry = manifest.entries.find((e) => e.key === result.key);
-        if (!entry) continue;
+        if (!entry) {
+          // The value-handling region starts here, not at the sink: a result
+          // for a key that is no longer in the manifest is dropped without a
+          // sink write, and its buffer must not survive that drop either.
+          if (result.outcome === 'entered') {
+            zero(result.value);
+          }
+          continue;
+        }
 
         if (result.outcome === 'entered') {
           if (entry.format?.pattern) {
@@ -343,25 +351,31 @@ export class Broker {
             }
           }
 
-          const sink = getSink(entry.sink ?? 'dotenv');
-          await sink.write(this.paths, result.key, result.value);
+          // Every exit from this region — including the sink write throwing
+          // SEP_SINK_WRITE_FAILED — must zero the entered value. The catch
+          // below records the failure but used to leave the buffer live in
+          // the heap.
+          try {
+            const sink = getSink(entry.sink ?? 'dotenv');
+            await sink.write(this.paths, result.key, result.value);
 
-          const fingerprint = computeFingerprint(result.value, this.salt);
-          // Record the outcome now, while we legitimately hold the value. This
-          // is the only place format validation touches a secret; env_describe
-          // afterwards reports THIS result rather than re-testing a pattern the
-          // model may have changed in the meantime.
-          recordValidation(this.paths, result.key, fingerprint, true);
-          this.ticketStore.setOutcome(ticketId, result.key, 'stored');
-          appendAudit(this.paths, {
-            type: 'stored',
-            ticket: ticketId,
-            key: result.key,
-            sink: sink.id,
-            fingerprint,
-          });
-
-          zero(result.value);
+            const fingerprint = computeFingerprint(result.value, this.salt);
+            // Record the outcome now, while we legitimately hold the value. This
+            // is the only place format validation touches a secret; env_describe
+            // afterwards reports THIS result rather than re-testing a pattern the
+            // model may have changed in the meantime.
+            recordValidation(this.paths, result.key, fingerprint, true);
+            this.ticketStore.setOutcome(ticketId, result.key, 'stored');
+            appendAudit(this.paths, {
+              type: 'stored',
+              ticket: ticketId,
+              key: result.key,
+              sink: sink.id,
+              fingerprint,
+            });
+          } finally {
+            zero(result.value);
+          }
         } else if (result.outcome === 'skipped') {
           this.ticketStore.setOutcome(ticketId, result.key, 'skipped');
           appendAudit(this.paths, {

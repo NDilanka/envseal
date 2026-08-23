@@ -57,6 +57,35 @@ async function getOrCreateToken(token?: string): Promise<string> {
   return newToken;
 }
 
+/**
+ * Constant-time bearer token check. Shared by the /v1 route auth and the
+ * /openapi.json route (N5): the spec used to be served BEFORE the auth check,
+ * so any loopback process could read the API surface without the token.
+ */
+function bearerTokenMatches(authorization: string | undefined, token: string): boolean {
+  const authHeader = authorization ?? '';
+  const bearerPrefix = 'Bearer ';
+
+  if (!authHeader.startsWith(bearerPrefix)) {
+    return false;
+  }
+
+  const providedToken = authHeader.slice(bearerPrefix.length);
+
+  // Use timing-safe comparison
+  const expectedTokenBuf = Buffer.from(token, 'utf8');
+  const providedTokenBuf = Buffer.from(providedToken, 'utf8');
+
+  try {
+    return (
+      expectedTokenBuf.length === providedTokenBuf.length &&
+      node_crypto.timingSafeEqual(expectedTokenBuf, providedTokenBuf)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function startHttpServer(
   opts: HttpServerOptions,
 ): Promise<StartResult> {
@@ -127,8 +156,24 @@ export async function startHttpServer(
       return;
     }
 
-    // Handle GET /openapi.json
+    // Handle GET /openapi.json — authenticated like every other route (N5).
+    // The document carries no secrets, but an unauthenticated read let any
+    // loopback process fingerprint the deployment's full route table, and no
+    // caller in this repository depends on the anonymous read.
     if (req.method === 'GET' && req.url === '/openapi.json') {
+      if (!bearerTokenMatches(req.headers.authorization, token)) {
+        res.writeHead(401);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'UNAUTHORIZED',
+              userMessage: 'Missing or invalid authorization',
+              retriable: false,
+            },
+          }),
+        );
+        return;
+      }
       const openapi = generateOpenAPI(actualPort);
       res.writeHead(200);
       res.end(JSON.stringify(openapi));
@@ -168,22 +213,7 @@ export async function startHttpServer(
       return;
     }
 
-    const providedToken = authHeader.slice(bearerPrefix.length);
-
-    // Use timing-safe comparison
-    const expectedTokenBuf = Buffer.from(token, 'utf8');
-    const providedTokenBuf = Buffer.from(providedToken, 'utf8');
-
-    let tokensMatch = false;
-    try {
-      tokensMatch =
-        expectedTokenBuf.length === providedTokenBuf.length &&
-        node_crypto.timingSafeEqual(expectedTokenBuf, providedTokenBuf);
-    } catch {
-      tokensMatch = false;
-    }
-
-    if (!tokensMatch) {
+    if (!bearerTokenMatches(authHeader, token)) {
       res.writeHead(401);
       res.end(
         JSON.stringify({

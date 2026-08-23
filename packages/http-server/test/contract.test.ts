@@ -254,6 +254,68 @@ describe('HTTP Server Contract', () => {
     expect(toolPaths).toContain('/v1/env_revoke');
   });
 
+  // N5: /openapi.json used to be handled before the bearer auth check, so any
+  // loopback process could read the full route table without the token. It is
+  // authenticated like every other route now.
+  it('rejects GET /openapi.json without Authorization header', async () => {
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+    });
+
+    serverCloseFunc = result.close;
+
+    const response = await httpRequest(`${result.url}/openapi.json`, {
+      method: 'GET',
+      headers: {},
+    });
+
+    expect(response.status).toBe(401);
+    const body = JSON.parse(response.body);
+    expect(body.error?.code).toBe('UNAUTHORIZED');
+    // The denial must not leak the document it refused to serve.
+    expect(response.body).not.toContain('openapi');
+    expect(response.body).not.toContain('env_describe');
+  });
+
+  it('rejects GET /openapi.json with a wrong token', async () => {
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+    });
+
+    serverCloseFunc = result.close;
+
+    const response = await httpRequest(`${result.url}/openapi.json`, {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer wrong-token',
+      },
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('serves GET /openapi.json with the valid token', async () => {
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+    });
+
+    serverCloseFunc = result.close;
+
+    const response = await httpRequest(`${result.url}/openapi.json`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${result.token}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.openapi).toBe('3.1.0');
+  });
+
   // The previous version of this test declared a sentinel that was never stored
   // anywhere, then asserted two responses did not contain it. With no value in
   // the project it could not have failed for any implementation, correct or not

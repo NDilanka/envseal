@@ -294,16 +294,17 @@ section('B5  Method confusion');
     statusOf(postOpenapi) === 404,
     `observed ${statusOf(postOpenapi)}`,
   );
-  const getOpenapi = await req(port, { method: 'GET', path: '/openapi.json' });
+  const openapiAnon = await req(port, { method: 'GET', path: '/openapi.json' });
   check(
-    'GET /openapi.json serves the spec',
+    'GET /openapi.json without a token -> 401 (N5: spec is authenticated)',
+    statusOf(openapiAnon) === 401,
+    `observed ${statusOf(openapiAnon)}`,
+  );
+  const getOpenapi = await req(port, { method: 'GET', path: '/openapi.json', headers: AUTH });
+  check(
+    'GET /openapi.json with a token serves the spec',
     statusOf(getOpenapi) === 200,
     `observed ${statusOf(getOpenapi)}`,
-  );
-  check(
-    'GET /openapi.json requires NO auth (unauthenticated read)',
-    statusOf(getOpenapi) === 200,
-    'informational: exposes only the tool schema + port, never a value',
   );
   check(
     '/openapi.json body carries no token and no secret',

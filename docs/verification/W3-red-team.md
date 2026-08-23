@@ -28,8 +28,8 @@ generates a throwaway CA into a temp dir and trusts it via `NODE_EXTRA_CA_CERTS`
 | W3-03 | Low | The loopback test suite could not have caught the M1 `Origin` regression (fixed — 2 tests added, mutation-verified) |
 | W3-04 | Low | `PLAN.md` §5.2 mechanic 4, `docs/threat-model.md` T10 and `spec/sep-1/SPEC.md:475` all specify the `Origin` rule that was just removed, and justify it with a false premise |
 | W3-05 | Low | `LoopbackPrompter` is not re-exported from `packages/prompters/src/index.ts` |
-| W3-06 | Low | HTTP binding: `/openapi.json` is unauthenticated; an unknown operation returns `200` with an error body; an empty `Origin:` header passes the truthiness check |
-| W3-07 | Low | `printf $SECRET` bypasses the hook's `echo $VAR` rule |
+| W3-06 | Low | HTTP binding: `/openapi.json` is unauthenticated; an unknown operation returns `200` with an error body; an empty `Origin:` header passes the truthiness check (openapi leg fixed 2026-08-23: 401 without a valid bearer, contract tests pin 401/200) |
+| W3-07 | Low | `printf $SECRET` bypasses the hook's `echo $VAR` rule (fixed 2026-08-23: sed/awk/grep added to FILE_READERS, backtick and `$(<file)` shapes split and checked, 13 deny + 4 allow regression cases) |
 
 **No Critical findings.** No secret reached a transcript, log, or network destination it
 should not, on any of the three surfaces.

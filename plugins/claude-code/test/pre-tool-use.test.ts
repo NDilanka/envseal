@@ -322,6 +322,60 @@ describe('pre-tool-use hook', () => {
     });
   });
 
+  // W3-07: printf/echo-class env-dump bypasses. `cat .env` inside a command
+  // substitution was caught by segment splitting, but `$(<file)` bash
+  // shorthand, backtick substitution, and the sed/awk/grep readers had no
+  // rule at all — `printf '%s' "$(<.env)"` dumped the file into the
+  // transcript while every `cat` shape was blocked.
+  describe('decide - printf/echo env-dump bypasses (W3-07)', () => {
+    const bypasses: Array<{ label: string; command: string }> = [
+      { label: 'printf with cat substitution (already covered)', command: 'printf "%s" "$(cat .env)"' },
+      { label: 'printf with $(<file) shorthand', command: 'printf \'%s\' "$(<.env)"' },
+      { label: 'echo with $(<file) shorthand', command: 'echo "$(<.env)"' },
+      { label: 'echo with spaced $(< file) shorthand', command: 'echo "$(< .env)"' },
+      { label: 'printf with sed substitution', command: 'printf \'%s\' "$(sed -n 1p .env)"' },
+      { label: 'echo with awk substitution', command: 'echo "$(awk 1 .env)"' },
+      { label: 'echo with grep substitution', command: 'echo "$(grep API_KEY .env)"' },
+      { label: 'echo with backtick cat substitution', command: 'echo "`cat .env`"' },
+      { label: 'printf with backtick sed substitution', command: 'printf \'%s\' "`sed -n 1p .env`"' },
+      { label: 'assignment via $(<file) shorthand', command: 'X="$(<.env)"; printf \'%s\' "$X"' },
+      { label: 'plain sed read', command: 'sed -n 1p .env' },
+      { label: 'plain awk read', command: 'awk 1 .env' },
+      { label: 'plain grep read', command: 'grep KEY .env' },
+    ];
+
+    for (const bypass of bypasses) {
+      it(`denies ${bypass.label}: ${bypass.command}`, () => {
+        const decision = decide({ tool: 'Bash', command: bypass.command });
+        // Unconditional reason check: a deny without an actionable alternative
+        // is a dead end for the model (see denial-messages suite).
+        expect(decision.allow, bypass.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('allows benign printf "hello"', () => {
+      const decision = decide({ tool: 'Bash', command: 'printf "hello"' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows benign echo of ordinary text', () => {
+      const decision = decide({ tool: 'Bash', command: 'echo "build finished"' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows printf substitution that reads a non-secret file', () => {
+      const decision = decide({ tool: 'Bash', command: 'printf \'%s\' "$(cat src/index.ts)"' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows sed/awk/grep on ordinary files', () => {
+      expect(decide({ tool: 'Bash', command: 'sed -i "s/foo/bar/" package.json' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: "awk '{print $1}' data.txt" }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'grep -rn "TODO" src' }).allow).toBe(true);
+    });
+  });
+
   describe('denial messages have alternatives', () => {
     const denialCases = [
       { tool: 'Read' as const, path: '.env' },

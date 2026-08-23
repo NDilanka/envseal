@@ -57,9 +57,9 @@ The protocol splits the problem into four principals, each with a specific trust
                                      └─────┘
 ```
 
-`*` keychain stores AND resolves values today (Windows DPAPI blob, macOS `security`, Linux `secret-tool`). `†` declared in the schema but not implemented — these sinks throw `SEP_SINK_UNAVAILABLE`. `dotenv` and `keychain` both store and resolve values.
+`*` keychain stores AND resolves values today (Windows DPAPI blob, macOS `security`, Linux `secret-tool`). `†` vault, 1Password, Doppler, and SOPS are implemented too — each delegates to its provider CLI (`vault`, `op`, `doppler`, `sops`), so a sink reports itself unavailable until that CLI is installed and authenticated. `dotenv`, `keychain`, and all four provider sinks both store and resolve values.
 
-**The one rule:** The secret value travels `User → secure input surface → broker → sink (.env / keychain / vault)` and crosses no other boundary. Of the declared sinks, only `dotenv` and `keychain` are functional today. The model and harness can only see key names, declarations, tickets, and redacted status metadata.
+**The one rule:** The secret value travels `User → secure input surface → broker → sink (.env / keychain / vault / sops / …)` and crosses no other boundary. The model and harness can only see key names, declarations, tickets, and redacted status metadata.
 
 The agent's verbs are strictly declarative:
 - **`env_declare`** — "This project needs `OPENAI_API_KEY`, here's the format and provider."

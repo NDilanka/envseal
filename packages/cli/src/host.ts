@@ -53,11 +53,28 @@ function envsealHooksInstalled(root: string): boolean {
   return false;
 }
 
+/**
+ * Detection runs in TWO passes with a hard precedence rule:
+ *
+ *   Pass 1 — PROJECT-LOCAL evidence only (.claude/, .cursor/, aider.conf.yml, ...).
+ *   Pass 2 — ENVIRONMENT and GLOBAL-HOME evidence (CLAUDECODE, ~/.codex,
+ *            ~/.cline, ~/.config/zed, ...) runs ONLY when pass 1 found nothing.
+ *
+ * A machine where the developer happens to have Codex installed globally
+ * (~/.codex exists) used to make EVERY bare directory report "Codex CLI, tier
+ * B" — advice about interception and sinks for a project that has nothing to
+ * do with that tool. A marker inside the project says something about THIS
+ * project; a marker in $HOME only says something about the MACHINE, so it must
+ * never outrank or substitute for project evidence.
+ */
+
+const TIER_B_ADVICE =
+  'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.';
+const TIER_C_ADVICE =
+  'Tier C host with protocol only. No interception hooks available; prefer the keychain sink so .env holds only references.';
+
 export function detectHost(root: string): HostInfo {
-  const claudeDir = join(root, '.claude');
-  const cursorDir = join(root, '.cursor');
-  const continueDir = join(root, '.continue');
-  const agentsFile = join(root, 'AGENTS.md');
+  /* ---------------- Pass 1: project-local evidence ---------------- */
 
   // Claude Code. Detecting the HOST is not the same as detecting the PROTECTION:
   // tier A is earned by envseal's interception hooks actually being installed, and
@@ -65,7 +82,7 @@ export function detectHost(root: string): HostInfo {
   // are maximally protected" on the strength of an environment variable is the
   // precise dishonesty this tier system exists to prevent — a user who believes
   // the hooks are guarding them behaves as if `cat .env` is blocked when it is not.
-  if (existsSync(claudeDir) || process.env.CLAUDECODE) {
+  if (existsSync(join(root, '.claude'))) {
     if (envsealHooksInstalled(root)) {
       return {
         id: 'claude-code',
@@ -87,31 +104,27 @@ export function detectHost(root: string): HostInfo {
     };
   }
 
-  // Tier B: Cursor
-  if (existsSync(cursorDir) || process.env.CURSOR_WORKSPACE || process.env.CURSOR_VERSION) {
+  if (existsSync(join(root, '.cursor'))) {
     return {
       id: 'cursor',
       name: 'Cursor',
       tier: 'B',
-      reason: 'Found .cursor/ directory or CURSOR_* environment variable',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      reason: 'Found .cursor/ directory',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: Continue
-  if (existsSync(continueDir)) {
+  if (existsSync(join(root, '.continue'))) {
     return {
       id: 'continue',
       name: 'Continue',
       tier: 'B',
       reason: 'Found .continue/ directory',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier C: Aider
+  // Tier C: Aider (project-local config forms).
   const aiderConfPatterns = ['aider', '.aider'];
   const aiderMarkerExists = aiderConfPatterns.some(
     (pattern) =>
@@ -119,121 +132,82 @@ export function detectHost(root: string): HostInfo {
       existsSync(join(root, `${pattern}.conf.yaml`)) ||
       existsSync(join(root, `${pattern}.conf.json`)),
   );
-
   if (aiderMarkerExists) {
     return {
       id: 'aider',
       name: 'Aider',
       tier: 'C',
       reason: 'Found .aider configuration file',
-      recommendation:
-        'Tier C host with protocol only. No interception hooks available; prefer the keychain sink so .env holds only references.',
+      recommendation: TIER_C_ADVICE,
     };
   }
 
-  // Tier B: Windsurf. The project marker is .windsurf/ (mcp_config.json lives
-  // there); the global config root is ~/.codeium/windsurf/ per docs/hosts/windsurf.md.
-  if (
-    existsSync(join(root, '.windsurf')) ||
-    existsSync(join(homedir(), '.codeium', 'windsurf'))
-  ) {
+  if (existsSync(join(root, '.windsurf'))) {
     return {
       id: 'windsurf',
       name: 'Windsurf',
       tier: 'B',
-      reason: 'Found .windsurf/ directory or global ~/.codeium/windsurf/ config',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      reason: 'Found .windsurf/ directory',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: Cline. Config lives in .cline/ (project) or ~/.cline/ (global,
-  // e.g. mcp_settings.json) per docs/hosts/cline.md.
-  if (
-    existsSync(join(root, '.cline')) ||
-    existsSync(join(homedir(), '.cline')) ||
-    process.env.CLINE_ROOT
-  ) {
+  if (existsSync(join(root, '.cline'))) {
     return {
       id: 'cline',
       name: 'Cline',
       tier: 'B',
-      reason: 'Found .cline/ directory, global ~/.cline/ config, or CLINE_ROOT set',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      reason: 'Found .cline/ directory',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: Zed. Project settings live in .zed/; global settings in
-  // ~/.config/zed (Linux/Mac) or ~/.zed per docs/hosts/zed.md.
-  if (
-    existsSync(join(root, '.zed')) ||
-    existsSync(join(homedir(), '.config', 'zed')) ||
-    existsSync(join(homedir(), '.zed')) ||
-    process.env.ZED_EDITOR
-  ) {
+  if (existsSync(join(root, '.zed'))) {
     return {
       id: 'zed',
       name: 'Zed',
       tier: 'B',
-      reason: 'Found .zed/ directory, global Zed config, or ZED_EDITOR set',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      reason: 'Found .zed/ directory',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: Codex CLI (docs/hosts/codex.md). Global config.toml lives under
-  // ~/.codex; the project form is a .codex/ directory.
-  if (
-    existsSync(join(root, '.codex')) ||
-    existsSync(join(homedir(), '.codex')) ||
-    process.env.CODEX_ROOT
-  ) {
+  if (existsSync(join(root, '.codex'))) {
     return {
       id: 'codex',
       name: 'Codex CLI',
       tier: 'B',
-      reason: 'Found .codex/ directory, global ~/.codex/ config, or CODEX_ROOT set',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      reason: 'Found .codex/ directory',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: JetBrains IDEs (IntelliJ, PyCharm, ...). The .idea/ directory
-  // marks an IntelliJ-family project per docs/hosts/jetbrains.md.
+  // Tier B: JetBrains IDEs (IntelliJ, PyCharm, ...).
   if (existsSync(join(root, '.idea'))) {
     return {
       id: 'jetbrains',
       name: 'JetBrains IDE',
       tier: 'B',
       reason: 'Found .idea/ directory',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier C: Goose (docs/hosts/goose.md). Global config under ~/.config/goose;
-  // project form goose.config.yaml or a .goose/ directory.
-  if (
-    existsSync(join(root, 'goose.config.yaml')) ||
-    existsSync(join(root, '.goose')) ||
-    existsSync(join(homedir(), '.config', 'goose')) ||
-    process.env.GOOSE_ROOT
-  ) {
+  // Tier C: Goose (project-local forms).
+  if (existsSync(join(root, 'goose.config.yaml')) || existsSync(join(root, '.goose'))) {
     return {
       id: 'goose',
       name: 'Goose',
       tier: 'C',
-      reason: 'Found goose.config.yaml, .goose/ directory, global goose config, or GOOSE_ROOT set',
-      recommendation:
-        'Tier C host with protocol only. No interception hooks available; prefer the keychain sink so .env holds only references.',
+      reason: 'Found goose.config.yaml or .goose/ directory',
+      recommendation: TIER_C_ADVICE,
     };
   }
 
   // Tier B: GitHub Copilot agent. VS Code Copilot has no unique project
   // directory, so the honest marker is Copilot settings inside
-  // .vscode/settings.json (docs/hosts/copilot-agent.md) — a bare .vscode/
-  // proves nothing, every VS Code project has one.
+  // .vscode/settings.json — a bare .vscode/ proves nothing, every VS Code
+  // project has one.
   const vscodeSettings = join(root, '.vscode', 'settings.json');
   let copilotSettings = false;
   try {
@@ -248,30 +222,108 @@ export function detectHost(root: string): HostInfo {
       name: 'GitHub Copilot',
       tier: 'B',
       reason: 'Found .vscode/settings.json referencing Copilot',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Tier B: Generic (AGENTS.md alone)
-  if (existsSync(agentsFile)) {
+  // Tier B: Generic (AGENTS.md alone).
+  if (existsSync(join(root, 'AGENTS.md'))) {
     return {
       id: 'generic',
       name: 'Generic Agent',
       tier: 'B',
       reason: 'Found AGENTS.md file',
-      recommendation:
-        'Tier B host with protocol + advisory guardrails only. Shell-command leaks are possible; prefer the keychain sink so .env holds only references.',
+      recommendation: TIER_B_ADVICE,
     };
   }
 
-  // Unknown
+  /* ------------- Pass 2: environment / global-home evidence -------------
+   * Reached ONLY when the project carries no marker of its own.             */
+
+  if (process.env.CLAUDECODE) {
+    return {
+      id: 'claude-code',
+      name: 'Claude Code',
+      tier: 'B',
+      reason: 'CLAUDECODE is set (running under Claude Code), no project markers found',
+      recommendation:
+        'Tier B until the plugin is installed: the protocol works, but nothing blocks a shell command from reading .env. Install the plugin in plugins/claude-code for tier A, or prefer the keychain sink so .env holds only references.',
+    };
+  }
+
+  if (process.env.CURSOR_WORKSPACE || process.env.CURSOR_VERSION) {
+    return {
+      id: 'cursor',
+      name: 'Cursor',
+      tier: 'B',
+      reason: 'CURSOR_* environment variable set, no project markers found',
+      recommendation: TIER_B_ADVICE,
+    };
+  }
+
+  if (process.env.CLINE_ROOT) {
+    return {
+      id: 'cline',
+      name: 'Cline',
+      tier: 'B',
+      reason: 'CLINE_ROOT is set, no project markers found',
+      recommendation: TIER_B_ADVICE,
+    };
+  }
+
+  if (process.env.ZED_EDITOR) {
+    return {
+      id: 'zed',
+      name: 'Zed',
+      tier: 'B',
+      reason: 'ZED_EDITOR is set, no project markers found',
+      recommendation: TIER_B_ADVICE,
+    };
+  }
+
+  if (process.env.CODEX_ROOT) {
+    return {
+      id: 'codex',
+      name: 'Codex CLI',
+      tier: 'B',
+      reason: 'CODEX_ROOT is set, no project markers found',
+      recommendation: TIER_B_ADVICE,
+    };
+  }
+
+  if (
+    existsSync(join(homedir(), '.codeium', 'windsurf')) ||
+    existsSync(join(homedir(), '.cline')) ||
+    existsSync(join(homedir(), '.config', 'zed')) ||
+    existsSync(join(homedir(), '.zed'))
+  ) {
+    return {
+      id: 'generic',
+      name: 'Generic Agent',
+      tier: 'B',
+      reason:
+        'No project markers found; a globally installed coding agent (Windsurf/Cline/Zed config in $HOME) is present',
+      recommendation:
+        'Advisory tier: the global install suggests an agent MAY act here, but nothing ties it to this project. The protocol still works; prefer the keychain sink so .env holds only references.',
+    };
+  }
+
+  if (process.env.GOOSE_ROOT || existsSync(join(homedir(), '.config', 'goose'))) {
+    return {
+      id: 'goose',
+      name: 'Goose',
+      tier: 'C',
+      reason: 'GOOSE_ROOT is set or global Goose config exists, no project markers found',
+      recommendation: TIER_C_ADVICE,
+    };
+  }
+
+  // Unknown.
   return {
     id: 'unknown',
     name: 'Unknown Host',
     tier: 'C',
     reason: 'Could not detect a known host environment',
-    recommendation:
-      'Tier C host with protocol only. No interception hooks available; prefer the keychain sink so .env holds only references.',
+    recommendation: TIER_C_ADVICE,
   };
 }

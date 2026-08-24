@@ -218,6 +218,52 @@ describe('host detection', () => {
     expect(host.tier).toBe('C');
   });
 
+  it('project-local marker beats a globally installed agent (D3)', () => {
+    // The developer has ~/.codex on this machine. The project is a Cursor
+    // project. The project's own marker must win.
+    mkdirSync(join(tempDir, '.codex'), { recursive: true }); // "global" install
+    mkdirSync(join(tempDir, 'proj', '.cursor'), { recursive: true });
+    const host = detectHost(join(tempDir, 'proj'));
+    expect(host.id).toBe('cursor');
+  });
+
+  it('a bare project does not inherit tier-B advice from ~/.codex alone (D3)', () => {
+    // The exact machine shape that made every temp dir report codex/B during
+    // the E2E: global ~/.codex exists, project carries nothing of its own.
+    mkdirSync(join(tempDir, '.codex'), { recursive: true });
+    const projDir = join(tempDir, 'bare-project');
+    mkdirSync(projDir, { recursive: true });
+    const host = detectHost(projDir);
+    expect(host.id).not.toBe('codex');
+    expect(host.id).toBe('unknown');
+    expect(host.tier).toBe('C');
+  });
+
+  it('global Cline config degrades to generic advisory, not a false cline claim', () => {
+    mkdirSync(join(tempDir, '.cline'), { recursive: true });
+    const projDir = join(tempDir, 'some-project');
+    mkdirSync(projDir, { recursive: true });
+    const host = detectHost(projDir);
+    expect(host.id).toBe('generic');
+    expect(host.reason).toMatch(/no project markers/i);
+  });
+
+  it('CLAUDECODE env signal yields tier B, and loses to a project .cursor/', () => {
+    vi.stubEnv('CLAUDECODE', '1');
+    mkdirSync(join(tempDir, '.cursor'), { recursive: true });
+    expect(detectHost(tempDir).id).toBe('cursor'); // project evidence wins
+
+    const bare = mkdtempSync(join(tmpdir(), 'envseal-host-envonly-'));
+    try {
+      const envOnly = detectHost(bare);
+      expect(envOnly.id).toBe('claude-code');
+      expect(envOnly.tier).toBe('B');
+      expect(envOnly.reason).toMatch(/no project markers/i);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
   it('reports Tier A only when envseal hooks are wired into settings', () => {
     const claudeDir = join(tempDir, '.claude');
     mkdirSync(claudeDir, { recursive: true });

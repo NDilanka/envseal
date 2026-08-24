@@ -14,6 +14,9 @@ export default tseslint.config(
       // Bundled CJS output and the build-time registry stub are generated
       // artifacts; linting them reports on esbuild's choices, not ours.
       'plugins/*/generated/**',
+      // Session scratch: verification harnesses and demo pages that are never
+      // committed, so lint noise there is pure distraction.
+      '.commandcode/**',
     ],
   },
   js.configs.recommended,

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
@@ -9,6 +10,23 @@ import { finish } from '../exit.js';
 
 export async function doctor(root: string, json: boolean): Promise<void> {
   try {
+    // An audit of a project with no configuration would report an empty,
+    // healthy-looking bill of health: gitignore/no, missing keys/0, exit 0.
+    // Every other command treats that state as SEP_NOT_DECLARED; the audit
+    // command must not be the one place it reads as success.
+    const manifestPath = join(root, 'env.schema.jsonc');
+    if (!existsSync(manifestPath)) {
+      fail(
+        json,
+        new SepError({
+          code: 'SEP_NOT_DECLARED',
+          userMessage:
+            'No env.schema.jsonc in this project (or parents). Run `envseal init` to create one.',
+        }),
+      );
+      return;
+    }
+
     const broker = await createBroker(root);
     const status = await broker.describe();
 
@@ -30,10 +48,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
     }
 
     const host = detectHost(root);
-
     const output = {
       projectRoot: root,
-      manifestPath: status.manifestPath,
+      manifestPath,
       host: {
         id: host.id,
         name: host.name,

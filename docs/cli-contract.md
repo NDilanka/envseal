@@ -31,7 +31,7 @@ The one way to proceed headlessly is `envseal run`'s own confirmation bypass: `-
 Initialize `env.schema.jsonc` at the project root.
 
 **Flags:**
-- `--host <name>` — Override host detection. Valid values: `claude-code`, `cursor`, `continue`, `aider`, `generic`, `unknown`; anything else is rejected with exit 2. When an override is given, the reported tier is what that host id implies, not evidence about this project — `envseal doctor` reports what is actually detected.
+- `--host <name>` — Override host detection. Valid values: `claude-code`, `cursor`, `continue`, `aider`, `windsurf`, `cline`, `zed`, `codex`, `jetbrains`, `goose`, `copilot`, `generic`, `unknown`; anything else is rejected with exit 2. When an override is given, the reported tier is what that host id implies, not evidence about this project — `envseal doctor` reports what is actually detected.
 - `--json` — Output as JSON.
 - `--project <path>` — Project root (default: auto-detect).
 
@@ -125,6 +125,10 @@ Prompt for a single key.
 ### `envseal status [KEY...]`
 
 Show the status of environment keys. Do not show values.
+
+On a project with no `env.schema.jsonc` at all, `status` is a truthful empty
+report: exit 0 with zero entries. (An *audit* — `doctor` — refuses instead,
+because an audit that reports "all clear" for an unconfigured project lies.)
 
 Presence is resolved sink-aware: process environment first, then the entry's
 declared sink (`dotenv` reads `.env`; `keychain` consults the OS-backed store).
@@ -260,6 +264,10 @@ envseal run -- npm test
 
 Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, gitignore coverage, file permissions, count of missing required keys.
 
+With no `env.schema.jsonc` in the project there is nothing to audit: `doctor`
+fails with `SEP_NOT_DECLARED` and exit 2 (same as `ensure`) instead of printing
+an empty bill of health.
+
 **Flags:**
 - `--json` — Output as JSON.
 - `--project <path>` — Project root.
@@ -341,7 +349,9 @@ Remove a key from the sink and report the provider's rotation URL.
 Start the MCP server over stdio. Intended for integration with MCP-capable hosts (Claude Code, Cursor, etc.). Do not use this directly; the host will manage it.
 
 **Exit codes:**
-- (server exits only on error or signal)
+- The exit code of the `envseal-mcp` child process.
+- 5 — The server binary could not be started (not installed, not on PATH, or
+  not executable). A failure here is never reported as success.
 
 ---
 

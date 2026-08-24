@@ -15,7 +15,7 @@ import { revoke } from './commands/revoke.js';
 import { mcp } from './commands/mcp.js';
 import { init } from './commands/init.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

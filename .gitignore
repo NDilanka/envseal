@@ -9,3 +9,9 @@ coverage/
 !.env.example
 .DS_Store
 *.log
+
+# A test gate on Linux CI generates packages/core/index.html (contents still
+# unidentified — see the release workflow's ghost-file forensics step). It is a
+# build/test byproduct, never source, and its presence in `git status` used to
+# abort the real publish leg with "working tree is dirty".
+packages/core/index.html

@@ -52,6 +52,21 @@ jobs:
       - name: Release preflight
         run: pnpm release:dry --skip-build
 
+      # Forensics for the ghost test artifact (packages/core/index.html): some
+      # Linux CI gate generates it, which used to abort the publish leg with
+      # "working tree is dirty". The file is gitignored now; this step records
+      # its contents when present so the postmortem can name the generator.
+      - name: Ghost-file forensics
+        if: always()
+        run: |
+          if [ -f packages/core/index.html ]; then
+            echo "=== ghost file present: packages/core/index.html ==="
+            head -c 2000 packages/core/index.html
+            echo
+          else
+            echo "no ghost file"
+          fi
+
       - name: Publish
         if: github.event_name == 'push' || inputs.dry-run == false
         run: pnpm release --skip-build

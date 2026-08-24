@@ -20,7 +20,7 @@
 
 ## Confirmed findings
 
-### F2 (High) — `ensure` with refused/absent prompt input HANGS in non-TTY
+### F2 (High) — ✅ FIXED `ensure` with refused/absent prompt input HANGS in non-TTY
 - **Scenario:** 2.1 / 2.3 — CLI run without a TTY and without fed value never returns (spawnSync timeout kill required).
 - **Expected:** refuse fast with honest exit (like `run` does: exit 4 in <300ms).
 - **Actual:** blocks indefinitely waiting on a prompt that cannot render.
@@ -33,22 +33,24 @@
 - **Impact:** users asking for keychain storage silently get plaintext on disk. Security-relevant default downgrade.
 - **Fix direction:** set must read the existing entry's sink (it already skips declare if present — but the stub-declare path must not be reachable for keys that ARE in the manifest; verify ordering, and make bare-stub declare inherit sink from any scanner hint).
 
-### F5 (Medium) — hook redactor misses some `KEY=value` shapes in user prompts
+### F5 (Medium) — ✅ FIXED hook redactor misses some `KEY=value` shapes in user prompts
 - **Scenario:** 4.4 — detector did not fire on one `KEY=sk-live-w4bt…` fixture shape; labels list empty.
 - **Impact:** pasted secret-shaped text may pass through unredacted in some formats. Partially mitigated by the PreToolUse deny layer.
 - **Next:** extend detector patterns; add regression fixtures.
 
-### F1 (Medium) — `init` succeeds (exit 0) over a hostile pre-existing manifest containing a secret-shaped `format.example`
+### F1 (Medium) — ✅ FIXED `init` succeeds (exit 0) over a hostile pre-existing manifest containing a secret-shaped `format.example`
 - **Scenario:** 1.3 — guard fires correctly when declaring through the API/broker, but `init` reading an already-on-disk hostile manifest reported scanned/added and exited 0.
 - **Impact:** inconsistent enforcement between write paths; the file was authored outside envseal though — designed boundary candidate, but the inconsistency deserves either a warning or docs.
 
 ### F4 (Low/Medium) — `run` succeeds (exit 0) when manifest deleted after set
 - **Scenario:** 1.5 — after `rm env.schema.jsonc`, `run --yes` still executed the child (broker resolved values from .env presence).
 - **Interpretation:** defensible (values exist, project still functional), but contradicts "manifest deleted → loud failure" expectation. Needs a documented decision: warn loudly or fail.
+- **RESOLUTION (fix shipped):** `run` now prints a prominent stderr warning when the manifest is missing but values still resolve — the operation proceeds (user-owned .env) but the condition is never silent.
 
-### F6 (Low) — audit log not recreated after deletion
-- **Scenario:** 6.5 — deleting `.envseal/audit.jsonl` then running again left it missing; operations continued without recreating the trail.
-- **Impact:** tamper-evidence gap: attacker can delete audit trail and it stays gone silently.
+### F6 (Low) — audit log not recreated after deletion → RECLASSIFIED: correct behavior
+- **Re-diagnosis:** `appendAudit` uses `appendFileSync`, which creates a missing file. The probe saw "not recreated" only because its chosen op (`run` with no injectable keys, then bare `status`) writes no audit event at all. Any event-writing op (`set`, `revoke`) recreates the log immediately — verified.
+- **Verdict:** designed behavior; no fix needed. The tamper-evidence posture is unchanged: deletion is detectable by absence, and the next audited operation restores the trail.
+
 
 ## Probe-side corrections (assertion wrong, product right)
 

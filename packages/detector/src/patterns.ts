@@ -23,6 +23,11 @@ interface HandPattern {
 
 const HAND_PATTERNS: HandPattern[] = [
   { id: 'openai-project-key', label: 'OpenAI project API key', providerId: 'openai', source: `sk-proj-${SW}{20,}` },
+  // F5: legacy OpenAI live keys (`sk-live-…`) and bare `sk-` runs were not
+  // covered — the W4 battle-test pasted `KEY=sk-live-w4bt…` straight through
+  // the user-prompt redactor. Same shape family as sk-proj-, so same guard.
+  { id: 'openai-legacy-key', label: 'OpenAI API key', providerId: 'openai', source: `sk-live-${SW}{20,}` },
+  { id: 'openai-generic-key', label: 'possible OpenAI API key', providerId: 'openai', source: `sk-(?!proj-|live-)[A-Za-z0-9]{20,}` },
   { id: 'anthropic-api03', label: 'Anthropic API key', providerId: 'anthropic', source: `sk-ant-api03-${SW}{20,}` },
   { id: 'github-pat', label: 'GitHub personal access token', providerId: 'github', source: `ghp_${SW}{30,}` },
   { id: 'github-oauth', label: 'GitHub OAuth access token', providerId: 'github', source: `gho_${SW}{30,}` },

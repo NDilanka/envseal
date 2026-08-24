@@ -1,5 +1,6 @@
 export * from './paths.js';
 export * from './manifest.js';
+export * from './guard.js';
 export * from './presence.js';
 export * from './redact.js';
 export * from './tickets.js';

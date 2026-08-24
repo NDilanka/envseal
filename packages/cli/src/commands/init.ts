@@ -1,4 +1,5 @@
-import { projectPaths, loadManifest, declareEntries } from '@envseal/core';
+import { projectPaths, loadManifest, declareEntries, scanManifestEntry } from '@envseal/core';
+import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { detectHost } from '../host.js';
 import { scanForEnvKeys, entryForKey } from '../scan.js';
@@ -40,6 +41,28 @@ export async function init(
 
     const paths = projectPaths(root);
     const discovered = scanForEnvKeys(root);
+
+    // F1: a manifest that already exists was authored by someone else (an
+    // editor, another tool, a malicious repo). Declaring into it without
+    // validating it first would launder hostile entries — e.g. a
+    // secret-shaped format.example — through envseal's own write path and
+    // commit them as blessed. Re-run the same schema+guard validation the
+    // declare path uses over every entry already on disk.
+    const existing = loadManifest(paths);
+    if (existing !== null) {
+      for (const [index, entry] of existing.entries.entries()) {
+        const finding = scanManifestEntry(entry, `entries[${index}]`);
+        if (finding !== null) {
+          throw new SepError({
+            code: 'SEP_VALUE_IN_REQUEST',
+            details: { field: finding.path },
+            userMessage:
+              `Refusing to init: the existing ${finding.path} entry looks like it contains a real credential (${finding.label}). ` +
+              'Manifest fields are committed to git and must describe keys, never contain values.',
+          });
+        }
+      }
+    }
     const entries = discovered.map(entryForKey);
 
     // declareEntries creates the manifest when absent and edits it surgically

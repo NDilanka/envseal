@@ -1,8 +1,8 @@
+import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { loadManifest, projectPaths } from '@envseal/core';
-import { SepError } from '@envseal/protocol';
-import { createBroker, outcomeForKey } from '../cli-utils.js';
+import { createBroker, hasInteractiveSurface, outcomeForKey } from '../cli-utils.js';
 import { finish } from '../exit.js';
 
 export async function ensure(root: string, json: boolean, check = false): Promise<void> {
@@ -82,6 +82,20 @@ export async function ensure(root: string, json: boolean, check = false): Promis
         });
       }
       return;
+    }
+
+    // F2: without --check, ensure asks the user for values. When there is no
+    // interactive surface and no double-gated test prompter configured, refuse
+    // now instead of selecting the loopback surface and waiting on a browser
+    // page nobody can see (the W4 hang). Mirrors run.ts's fail-closed stance.
+    if (!hasInteractiveSurface() && !(process.env.ENVSEAL_TEST_PROMPTER_VALUE !== undefined ||
+        process.env.ENVSEAL_TEST_PROMPTER_OUTCOME !== undefined)) {
+      throw new SepError({
+        code: 'SEP_NO_INTERACTIVE_SURFACE',
+        userMessage:
+          'envseal ensure needs to collect missing keys, but there is no interactive surface here. ' +
+          'Use --check to gate without prompting, provide values out of band, or run interactively.',
+      });
     }
 
     // Request all missing keys at once

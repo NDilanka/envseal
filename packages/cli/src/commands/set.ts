@@ -1,9 +1,9 @@
 import { emit, fail } from '../output.js';
 import { EXIT, exitCodeForOutcome } from '../exit-codes.js';
-import { createBroker, outcomeForKey } from '../cli-utils.js';
+import { createBroker, hasInteractiveSurface, outcomeForKey } from '../cli-utils.js';
 import { finish } from '../exit.js';
 import { loadManifest, projectPaths, saveManifest } from '@envseal/core';
-import type { ManifestEntry } from '@envseal/protocol';
+import { SepError, type ManifestEntry } from '@envseal/protocol';
 
 /**
  * Undo a declaration THIS invocation added, after nothing was stored under it.
@@ -39,6 +39,30 @@ export async function set(root: string, key: string, json: boolean): Promise<voi
 
   try {
     const broker = await createBroker(root);
+
+    // F2: same fail-closed rule as ensure/run. Without this, a non-TTY caller
+    // (agent shell, scheduler) selected the loopback surface and waited on a
+    // browser page nobody could see.
+    //
+    // The guard fires BEFORE any declare, so a refused run also leaves no
+    // phantom declaration — but only for keys that are NOT already declared
+    // (those keep the pre-existing rollback semantics below). CI=1 keeps the
+    // original path: declare-then-request so the refusal is announced with the
+    // "declared X but nothing was stored" mutation message, which the contract
+    // test pins.
+    const surfaceUsable =
+      hasInteractiveSurface() ||
+      process.env.CI !== undefined ||
+      process.env.ENVSEAL_TEST_PROMPTER_VALUE !== undefined ||
+      process.env.ENVSEAL_TEST_PROMPTER_OUTCOME !== undefined;
+    if (!surfaceUsable) {
+      throw new SepError({
+        code: 'SEP_NO_INTERACTIVE_SURFACE',
+        userMessage:
+          'envseal set needs to collect a value, but there is no interactive surface here. ' +
+          'Run it in an interactive shell, or use the documented ENVSEAL_TEST_MODE hooks in tests.',
+      });
+    }
 
     // Declare the key only if it is not already in the manifest.
     //

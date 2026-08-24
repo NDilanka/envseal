@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline';
 import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
 import { createBroker } from '../cli-utils.js';
+import { loadManifest, projectPaths } from '@envseal/core';
 import { finish } from '../exit.js';
 
 /**
@@ -70,6 +71,16 @@ export async function run(
     const broker = await createBroker(root, {
       onConfirm: assumeYes ? async () => true : confirmInteractive,
     });
+    // F4: a missing manifest while values still resolve is a suspicious state
+    // (deleted by hand or tooling). The run proceeds — the .env is user-owned —
+    // but never silently: the condition goes to stderr in both output modes.
+    if (loadManifest(projectPaths(root)) === null) {
+      const warning =
+        'envseal: no env.schema.jsonc found for this project. ' +
+        'Values are still resolved from .env/keychain because those are user-owned, ' +
+        "but nothing is declared here anymore. Run `envseal init` to re-create the manifest.";
+      process.stderr.write(`\n${warning}\n\n`);
+    }
     const status = await broker.describe();
 
     const presentKeys = status.entries.filter((e) => e.present).map((e) => e.key);

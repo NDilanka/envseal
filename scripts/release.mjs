@@ -166,4 +166,12 @@ if (dryRun) {
 }
 
 step('pnpm -r publish');
-pnpm(['-r', 'publish', '--access', 'public', '--publish-branch', branch]);
+// A tag checkout runs in DETACHED HEAD (`rev-parse --abbrev-ref` says "HEAD"),
+// and pnpm rejects `--publish-branch HEAD` because HEAD is not a branch name.
+// The git-state gate above has already enforced what those checks exist for,
+// so a detached run disables pnpm's redundant check instead.
+if (branch === 'HEAD') {
+  pnpm(['-r', 'publish', '--access', 'public', '--no-git-checks']);
+} else {
+  pnpm(['-r', 'publish', '--access', 'public', '--publish-branch', branch]);
+}

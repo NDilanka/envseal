@@ -42,6 +42,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Fail in SECONDS, not after five minutes of gates, when the secret is
+      # missing, revoked, or not publish-capable (e.g. a classic Publish-type
+      # token, which demands an interactive OTP that CI can never answer —
+      # the credential must be an Automation-type classic token, or a granular
+      # token with write on every @envseal/* package).
+      - name: Preflight npm credential
+        run: npm whoami
+
       # the same gates CI runs; a release must not be the first time these are checked
       - run: pnpm build
       - run: pnpm typecheck

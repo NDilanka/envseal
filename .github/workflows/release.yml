@@ -46,9 +46,20 @@ jobs:
       # missing, revoked, or not publish-capable (e.g. a classic Publish-type
       # token, which demands an interactive OTP that CI can never answer —
       # the credential must be an Automation-type classic token, or a granular
-      # token with write on every @envseal/* package).
+      # token with write on every @envseal/* package). NOTE: without the env
+      # mapping below, NODE_AUTH_TOKEN resolves to setup-node's placeholder
+      # (XXXXX-…) inside the generated .npmrc and every read 401s — that
+      # placeholder in the step env dump is the tell, not a leaked secret.
       - name: Preflight npm credential
-        run: npm whoami
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ] || [ "$NODE_AUTH_TOKEN" = "XXXXX-XXXXX-XXXXX-XXXXX" ]; then
+            echo "::error::NPM_TOKEN did not reach the environment (empty or placeholder)"
+            exit 1
+          fi
+          echo "token present, length ${#NODE_AUTH_TOKEN}"
+          npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # the same gates CI runs; a release must not be the first time these are checked
       - run: pnpm build

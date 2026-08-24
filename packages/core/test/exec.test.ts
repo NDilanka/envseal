@@ -66,14 +66,20 @@ describe('exec', () => {
       const secrets = new Map([['TEST_KEY', value]]);
 
       try {
-        await runWithSecrets(['curl', 'https://example.com'], secrets, {
+        // .invalid is guaranteed unresolvable (RFC 2606): the egress flag comes
+        // from inspecting the command's arguments, not from the transfer
+        // succeeding, so no real network request is needed. A real URL here
+        // made Linux CI download https://example.com into packages/core as
+        // index.html (wget/curl default output), dirtying the tree and
+        // aborting the release publish leg.
+        await runWithSecrets(['curl', 'https://envseal-egress.invalid/'], secrets, {
           onConfirm: async (info) => {
             confirmed.value = info.networkEgress;
             return true;
           },
         });
       } catch {
-        // curl might fail but we just care about the onConfirm call
+        // the transfer failing is fine; we just care about the onConfirm call
       }
 
       expect(confirmed.value).toBe(true);
@@ -85,14 +91,16 @@ describe('exec', () => {
       const secrets = new Map([['TEST_KEY', value]]);
 
       try {
-        await runWithSecrets(['wget', 'https://example.com'], secrets, {
+        // See the curl case above: .invalid keeps this hermetic. The old real
+        // URL caused wget to write ./index.html into the repo on Linux CI.
+        await runWithSecrets(['wget', 'https://envseal-egress.invalid/'], secrets, {
           onConfirm: async (info) => {
             confirmed.value = info.networkEgress;
             return true;
           },
         });
       } catch {
-        // wget might fail but we just care about the onConfirm call
+        // the transfer failing is fine; we just care about the onConfirm call
       }
 
       expect(confirmed.value).toBe(true);

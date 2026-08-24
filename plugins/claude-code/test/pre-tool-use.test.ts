@@ -342,6 +342,14 @@ describe('pre-tool-use hook', () => {
       { label: 'plain sed read', command: 'sed -n 1p .env' },
       { label: 'plain awk read', command: 'awk 1 .env' },
       { label: 'plain grep read', command: 'grep KEY .env' },
+      // rg is the reader agents reach for first; bat and nl are cat-alikes.
+      // All three were still absent from FILE_READERS after W3-07 closed
+      // sed/awk/grep.
+      { label: 'plain rg read', command: 'rg API_KEY .env' },
+      { label: 'rg with empty pattern reads the whole file', command: 'rg "" .env' },
+      { label: 'echo with rg substitution', command: 'echo "$(rg API_KEY .env)"' },
+      { label: 'printf with bat substitution', command: 'printf \'%s\' "$(bat .env)"' },
+      { label: 'plain nl read', command: 'nl .env' },
     ];
 
     for (const bypass of bypasses) {
@@ -373,6 +381,12 @@ describe('pre-tool-use hook', () => {
       expect(decide({ tool: 'Bash', command: 'sed -i "s/foo/bar/" package.json' }).allow).toBe(true);
       expect(decide({ tool: 'Bash', command: "awk '{print $1}' data.txt" }).allow).toBe(true);
       expect(decide({ tool: 'Bash', command: 'grep -rn "TODO" src' }).allow).toBe(true);
+    });
+
+    it('allows rg/bat/nl on ordinary files', () => {
+      expect(decide({ tool: 'Bash', command: 'rg -n "TODO" src' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'bat README.md' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'nl src/index.ts' }).allow).toBe(true);
     });
   });
 

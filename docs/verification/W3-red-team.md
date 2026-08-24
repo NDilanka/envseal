@@ -23,13 +23,13 @@ generates a throwaway CA into a temp dir and trusts it via `NODE_EXTRA_CA_CERTS`
 
 | ID | Severity | Title |
 |---|---|---|
-| **W3-02** | **High** | The T3 secret-shaped-field detector is never wired into `packages/core`; a secret in `description` / `format.example` is written to the git-committed manifest |
-| **W3-01** | **Medium** | Key names are interpolated into `id=""` attributes without escaping (loopback.ts:104,108) |
+| **W3-02** | **High** | The T3 secret-shaped-field detector is never wired into `packages/core`; a secret in `description` / `format.example` is written to the git-committed manifest (fixed — `guard.ts` rejects with `SEP_VALUE_IN_REQUEST`, secret-guard suite pins it) |
+| **W3-01** | **Medium** | Key names are interpolated into `id=""` attributes without escaping (loopback.ts:104,108) (fixed — `escapeHtml` wraps every interpolation, comment marks the contract) |
 | W3-03 | Low | The loopback test suite could not have caught the M1 `Origin` regression (fixed — 2 tests added, mutation-verified) |
-| W3-04 | Low | `PLAN.md` §5.2 mechanic 4, `docs/threat-model.md` T10 and `spec/sep-1/SPEC.md:475` all specify the `Origin` rule that was just removed, and justify it with a false premise |
-| W3-05 | Low | `LoopbackPrompter` is not re-exported from `packages/prompters/src/index.ts` |
-| W3-06 | Low | HTTP binding: `/openapi.json` is unauthenticated; an unknown operation returns `200` with an error body; an empty `Origin:` header passes the truthiness check (openapi leg fixed 2026-08-23: 401 without a valid bearer, contract tests pin 401/200) |
-| W3-07 | Low | `printf $SECRET` bypasses the hook's `echo $VAR` rule (fixed 2026-08-23: sed/awk/grep added to FILE_READERS, backtick and `$(<file)` shapes split and checked, 13 deny + 4 allow regression cases) |
+| W3-04 | Low | `PLAN.md` §5.2 mechanic 4, `docs/threat-model.md` T10 and `spec/sep-1/SPEC.md:475` all specify the `Origin` rule that was just removed, and justify it with a false premise (superseded — the W3-03 fix restored the rule in code, so spec and behaviour agree again) |
+| W3-05 | Low | `LoopbackPrompter` is not re-exported from `packages/prompters/src/index.ts` (fixed) |
+| W3-06 | Low | HTTP binding: `/openapi.json` is unauthenticated; an unknown operation returns `200` with an error body; an empty `Origin:` header passes the truthiness check (all three legs fixed — openapi requires the bearer (401/200 pinned), unknown operations 404 (pinned), and `Origin: ''` rejects 400 (pinned, 2026-08-23)) |
+| W3-07 | Low | `printf $SECRET` bypasses the hook's `echo $VAR` rule (fixed 2026-08-23: sed/awk/grep added to FILE_READERS, backtick and `$(<file)` shapes split and checked, 13 deny + 4 allow regression cases; rg/bat/nl added after the same gap resurfaced for ripgrep, 18 deny + 5 allow total) |
 
 **No Critical findings.** No secret reached a transcript, log, or network destination it
 should not, on any of the three surfaces.
@@ -623,7 +623,7 @@ Full machine output: `node scripts/probe-w3-threats.mjs`.
 
 ## 6. Remaining findings
 
-### W3-02 — The T3 detector is never wired into the broker · **High**
+### W3-02 — The T3 detector is never wired into the broker · **High** · **fixed**
 
 **Claim under test (PLAN §2.2, T3):** *"Any request whose free-text fields match the
 secret-shaped detector is rejected, logged, and surfaced to the user."*
@@ -715,7 +715,7 @@ new tests fail with `expected 400 to be 200`; restored, all 9 pass. No assertion
 > reproduce the precise browser value. `scripts/probe-w3-loopback.mjs` §A2/A2c covers `null`
 > and its containment. Adding a `null`-origin round-trip to the suite would close this.
 
-### W3-04 — Three documents specify the removed `Origin` rule, with a false premise · Low
+### W3-04 — Three documents specify the removed `Origin` rule, with a false premise · Low · **fixed**
 
 | File | Text |
 |---|---|
@@ -746,7 +746,7 @@ Mechanic 5's directive list should also be updated to include `script-src 'nonce
 
 **Not edited** — these are spec/docs owned by W5, and PLAN.md is the governing document.
 
-### W3-05 — `LoopbackPrompter` is not re-exported · Low
+### W3-05 — `LoopbackPrompter` is not re-exported · Low · **fixed**
 
 `packages/prompters/src/index.ts` exports only `selectPrompter` / `allPrompters`. A Tier-2
 consumer importing `@envseal/prompters` cannot construct a `LoopbackPrompter` with options
@@ -756,14 +756,14 @@ into `dist/loopback.js`, which is not a public entry point and would break under
 `package.json` `exports` map that omits subpaths — a real risk given W1 is auditing exactly
 that.
 
-### W3-06 — HTTP binding wrinkles · Low
+### W3-06 — HTTP binding wrinkles · Low · **fixed**
 
 Three, none exploitable: `/openapi.json` served without auth (schema and port only, no token
 or value); an unknown operation returns `200` with an error body where `404` would be honest;
 `if (req.headers.origin)` at `server.ts:89` is a truthiness test, so a header with an empty
 value passes. No browser sends an empty `Origin`, and a valid bearer token is still required.
 
-### W3-07 — `printf $SECRET` bypasses the `echo` rule · Low
+### W3-07 — `printf $SECRET` bypasses the `echo` rule · Low · **fixed**
 
 `echoReferencesSecret` gates on `/\becho\b/`. With a manifest declaring `OPENAI_API_KEY`:
 

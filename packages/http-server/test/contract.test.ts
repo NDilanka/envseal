@@ -201,6 +201,52 @@ describe('HTTP Server Contract', () => {
     expect(response.status).toBe(400);
   });
 
+  // The exact W3-06 shape: `Origin:` present but empty. The check is
+  // `!== undefined`, and a truthiness regression here sails past every other
+  // test because no browser ever sends an empty value.
+  it('rejects requests whose Origin header value is empty', async () => {
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+    });
+
+    serverCloseFunc = result.close;
+
+    const response = await httpRequest(`${result.url}/v1/env_describe`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${result.token}`,
+        Origin: '',
+      },
+      body: {},
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  // F32: an unknown operation is a routing failure (404), not an error body
+  // under 200 — and it is only decided after auth, so this also proves an
+  // unauthenticated caller cannot map the route table.
+  it('answers an unknown /v1 operation with 404, not 200 with an error body', async () => {
+    const result = await startHttpServer({
+      root: testRoot,
+      token: 'test-token-12345',
+    });
+
+    serverCloseFunc = result.close;
+
+    const response = await httpRequest(`${result.url}/v1/env_nope`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${result.token}`,
+      },
+      body: {},
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toContain('Unknown operation');
+  });
+
   it('returns 200 for valid env_describe request', async () => {
     const result = await startHttpServer({
       root: testRoot,

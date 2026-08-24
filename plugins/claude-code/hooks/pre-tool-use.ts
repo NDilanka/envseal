@@ -77,6 +77,12 @@ const FILE_READERS = new Set([
   'sed',
   'awk',
   'grep',
+  // Same class, same reasoning: rg is the modern grep (agents reach for it
+  // constantly), bat and nl are cat-alikes. Denied only when an argument
+  // references a denied secret path — `rg TODO src` is unaffected.
+  'rg',
+  'bat',
+  'nl',
 ]);
 // W3-07: backticks are command substitution too. Without splitting on them,
 // `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner

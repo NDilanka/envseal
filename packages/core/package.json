@@ -35,5 +35,14 @@
   },
   "devDependencies": {
     "fast-check": "^3.23.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NDilanka/envseal.git",
+    "directory": "core/package.json"
+  },
+  "homepage": "https://github.com/NDilanka/envseal#readme",
+  "bugs": {
+    "url": "https://github.com/NDilanka/envseal/issues"
   }
 }

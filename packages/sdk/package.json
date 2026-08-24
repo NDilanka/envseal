@@ -34,5 +34,14 @@
   },
   "devDependencies": {
     "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NDilanka/envseal.git",
+    "directory": "sdk/package.json"
+  },
+  "homepage": "https://github.com/NDilanka/envseal#readme",
+  "bugs": {
+    "url": "https://github.com/NDilanka/envseal/issues"
   }
 }

@@ -36,5 +36,14 @@
     "@envseal/detector": "workspace:*",
     "@envseal/mcp-server": "workspace:*",
     "@envseal/http-server": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NDilanka/envseal.git",
+    "directory": "cli/package.json"
+  },
+  "homepage": "https://github.com/NDilanka/envseal#readme",
+  "bugs": {
+    "url": "https://github.com/NDilanka/envseal/issues"
   }
 }

@@ -40,5 +40,14 @@
   "devDependencies": {
     "tsx": "^4.19.2",
     "zod-to-json-schema": "^3.24.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NDilanka/envseal.git",
+    "directory": "mcp-server/package.json"
+  },
+  "homepage": "https://github.com/NDilanka/envseal#readme",
+  "bugs": {
+    "url": "https://github.com/NDilanka/envseal/issues"
   }
 }

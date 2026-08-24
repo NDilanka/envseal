@@ -30,5 +30,14 @@
   },
   "devDependencies": {
     "undici": "^7.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NDilanka/envseal.git",
+    "directory": "prompters/package.json"
+  },
+  "homepage": "https://github.com/NDilanka/envseal#readme",
+  "bugs": {
+    "url": "https://github.com/NDilanka/envseal/issues"
   }
 }

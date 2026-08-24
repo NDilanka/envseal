@@ -90,4 +90,6 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      # Warnings are debt: the count hit 41 before being paid down to zero.
+      # --max-warnings keeps it at zero; a new warning fails the job.
+      - run: pnpm lint --max-warnings 0

@@ -238,7 +238,7 @@ async function openBrowser(
 }
 
 export class LoopbackPrompter implements Prompter {
-  readonly id: 'loopback-browser' = 'loopback-browser';
+  readonly id = 'loopback-browser' as const;
 
   private readonly options: LoopbackPrompterOptions;
   private openerProbe: Promise<boolean> | null = null;
@@ -277,7 +277,7 @@ export class LoopbackPrompter implements Prompter {
       resolvePrompt = resolve;
     });
 
-    let launchedUrl: string | undefined;
+    const state: { launchedUrl?: string } = {};
     let complete: (results: PromptKeyResult[]) => void = () => {};
     let teardown: () => void = () => {};
 
@@ -324,8 +324,8 @@ export class LoopbackPrompter implements Prompter {
       settled = true;
       clearTimeout(timer);
       teardown();
-      if (launchedUrl !== undefined) {
-        resolvePrompt({ ticket: req.ticket, results, url: launchedUrl });
+      if (state.launchedUrl !== undefined) {
+        resolvePrompt({ ticket: req.ticket, results, url: state.launchedUrl });
       } else {
         resolvePrompt({ ticket: req.ticket, results });
       }
@@ -365,7 +365,7 @@ export class LoopbackPrompter implements Prompter {
       this.options.openBrowser === false
         ? { ok: false, url: fallbackUrl }
         : await openBrowser(address.port, pathNonce);
-    launchedUrl = launched.ok ? undefined : launched.url;
+    if (!launched.ok) state.launchedUrl = launched.url;
 
     const result = await promptPromise;
     if (this.current !== null && this.current.ticket === req.ticket) {

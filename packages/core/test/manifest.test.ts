@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { projectPaths, loadOrCreateSalt } from '../src/paths.js';
+import { projectPaths } from '../src/paths.js';
 import { loadManifest, saveManifest, declareEntries, emptyManifest } from '../src/manifest.js';
 import { SepError } from '@envseal/protocol';
 

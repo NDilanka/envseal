@@ -348,6 +348,18 @@ Remove a key from the sink and report the provider's rotation URL.
 
 Start the MCP server over stdio. Intended for integration with MCP-capable hosts (Claude Code, Cursor, etc.). Do not use this directly; the host will manage it.
 
+**Tools exposed** (each maps to a CLI counterpart, but the host calls these directly):
+
+| Tool | CLI equivalent | What it does |
+|---|---|---|
+| `env_declare` | `init` (scanner-driven) | Declare keys + metadata into `env.schema.jsonc`; secret-shaped free text is rejected (`SEP_VALUE_IN_REQUEST`) |
+| `env_describe` | `status` | Presence, sink, fingerprint per key — never values |
+| `env_request` | `set` | Open the secure input surface for the user to type a value; returns a ticket immediately |
+| `env_await` | — (blocking part of `set`) | Poll/block on a ticket until stored / cancelled / invalid_format / timeout |
+| `env_verify` | `verify` | Classified probe result (ok / auth_failed / forbidden / rate_limited / network_error / no_probe / probe_not_approved); response bodies never returned |
+| `env_use` | `run` | Execute a command with secrets injected into the child environment only; output redacted; requires confirmation |
+| `env_revoke` | `revoke` | Remove from sink + return the provider's rotation URL |
+
 **Exit codes:**
 - The exit code of the `envseal-mcp` child process.
 - 5 — The server binary could not be started (not installed, not on PATH, or

@@ -2,7 +2,7 @@
 //
 // A token is always passed explicitly so the probe never reads or creates
 // ~/.envseal/api-token. The project root is a mkdtemp with a .gitignore.
-import { connect, createConnection } from 'node:net';
+import { createConnection } from 'node:net';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -87,13 +87,6 @@ function dechunk(text) {
 function bodyOf(r) {
   const i = r.body.indexOf('\r\n\r\n');
   return i === -1 ? '' : r.body.slice(i + 4);
-}
-function jsonOf(r) {
-  try {
-    return JSON.parse(bodyOf(r));
-  } catch {
-    return null;
-  }
 }
 function req(port, { method = 'POST', path = '/v1/env_describe', headers = {}, body = '' } = {}) {
   const buf = Buffer.from(body, 'utf8');

@@ -311,7 +311,7 @@ export async function startHttpServer(
       const result = await dispatch(broker, operationName, body);
       res.writeHead(200);
       res.end(JSON.stringify(result));
-    } catch (error) {
+    } catch {
       res.writeHead(500);
       res.end(
         JSON.stringify({

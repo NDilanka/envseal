@@ -200,7 +200,7 @@ describe('verify', () => {
       };
       const value = asSecret(Buffer.from('test-value', 'utf8'));
 
-      const result = await verifyKey(paths, entry, value);
+      await verifyKey(paths, entry, value);
 
       expect(fetch).toHaveBeenCalledWith(
         expect.anything(),

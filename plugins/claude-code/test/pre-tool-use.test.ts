@@ -3,7 +3,6 @@ import {
   normalizePayload,
   isDeniedSecretPath,
   decide,
-  decideBash,
   headOf,
   stripAssignments,
   envIsBare,

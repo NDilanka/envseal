@@ -29,7 +29,6 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const PIPE = '\\\\.\\pipe\\envseal-ide';
-const TOKEN_PATH = join(homedir(), '.envseal', 'ide-token');
 
 let failures = 0;
 const fail = (msg) => {

@@ -109,7 +109,7 @@ function parseResult(raw: unknown): PromptKeyResult {
 }
 
 export class IdePrompter {
-  readonly id: 'ide' = 'ide';
+  readonly id = 'ide' as const;
 
   async available(): Promise<boolean> {
     const socket = await tryConnect(750);

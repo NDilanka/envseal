@@ -17,7 +17,6 @@ export const inputSchema = INPUT_SCHEMAS.env_describe;
 
 export async function handler(args: unknown, broker: Broker) {
   try {
-    const input = INPUT_SCHEMAS.env_describe.parse(args ?? {});
     const result = await broker.describe();
     return respond(result);
   } catch (error) {

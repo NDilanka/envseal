@@ -6,7 +6,7 @@
 // three ways — a read-only target, a target held open with FileShare.None by
 // another process, and a process killed mid-write — and records what is left
 // on disk each time.
-import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,

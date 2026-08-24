@@ -122,7 +122,7 @@ export class TicketStore {
       }
       this.expireIfDue(record);
       let settled = false;
-      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const timer: { handle?: ReturnType<typeof setTimeout> } = {};
       const listener = () => {
         if (record.state !== 'pending') finish();
       };
@@ -131,7 +131,7 @@ export class TicketStore {
         settled = true;
         this.unsubscribe(ticket, listener);
         this.pendingAwaits.delete(finish);
-        if (timeout !== undefined) clearTimeout(timeout);
+        if (timer.handle !== undefined) clearTimeout(timer.handle);
         resolvePromise(this.toOutcome(record));
       };
       if (record.state !== 'pending') {
@@ -142,7 +142,7 @@ export class TicketStore {
       // own expiry.
       const untilExpiry = Math.max(0, record.expiresAt - Date.now());
       const delay = Math.min(Math.max(0, timeoutMs), untilExpiry, MAX_TIMER_MS);
-      timeout = setTimeout(() => {
+      timer.handle = setTimeout(() => {
         this.expireIfDue(record);
         finish();
       }, delay);

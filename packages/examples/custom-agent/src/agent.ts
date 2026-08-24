@@ -75,7 +75,7 @@ export async function runAgentLoop(): Promise<{
   toolCallSequence.push(requestCall);
 
   // Extract ticket from result
-  const ticket = (requestResult as any).ticket;
+  const ticket = (requestResult as { ticket?: unknown }).ticket;
   if (!ticket) {
     throw new Error('env_request did not return a ticket');
   }

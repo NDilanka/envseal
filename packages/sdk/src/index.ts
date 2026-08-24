@@ -5,8 +5,6 @@ import { selectPrompter } from '@envseal/prompters';
 import {
   SEP_TOOL_NAMES,
   INPUT_SCHEMAS,
-  type SepErrorCode,
-  SepError,
   isSepError,
 } from '@envseal/protocol';
 import { zodToJsonSchema } from 'zod-to-json-schema';

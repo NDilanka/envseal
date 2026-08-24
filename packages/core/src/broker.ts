@@ -8,7 +8,6 @@ import type {
   ExecResult,
   RevokeResult,
   RevokeResults,
-  EnvDescribeInput,
   EnvDeclareInput,
   EnvRequestInput,
   EnvAwaitInput,
@@ -18,7 +17,7 @@ import type {
   DeclareResult,
   KeyStatus,
 } from '@envseal/protocol';
-import { SepError, isSepError, asSecret, zero } from '@envseal/protocol';
+import { SepError, isSepError, zero } from '@envseal/protocol';
 import { getProvider, findKey } from '@envseal/registry';
 import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
@@ -36,7 +35,7 @@ import { getSink } from './sinks/registry.js';
 import { getValidation, recordValidation } from './validation-state.js';
 import { scanText, secretInRequestError } from './guard.js';
 
-const LENGTH_BUCKETS = ['<8', '8-16', '16-32', '32-48', '48-64', '64-128', '128+'] as const;
+
 
 function getLengthBucket(length: number): string {
   if (length < 8) return '<8';
@@ -165,8 +164,6 @@ export class Broker {
   }
 
   async declare(input: EnvDeclareInput): Promise<DeclareResult> {
-    const manifest = loadManifest(this.paths) ?? emptyManifest();
-
     const withDefaults = input.entries.map((entry) => {
       if (entry.format || entry.provider || entry.verify) {
         return entry;
@@ -460,7 +457,7 @@ export class Broker {
 
   async use(input: EnvUseInput): Promise<ExecResult> {
     const manifest = loadManifest(this.paths) ?? emptyManifest();
-    const secrets = new Map<string, any>();
+    const secrets = new Map<string, import('@envseal/protocol').SecretValue>();
 
     for (const keyName of input.keys) {
       const entry = manifest.entries.find((e) => e.key === keyName);

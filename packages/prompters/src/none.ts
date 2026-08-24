@@ -6,7 +6,7 @@ import type { Prompter, PromptRequest, PromptResponse } from './types.js';
  * MUST NOT fall back to asking in chat.
  */
 export class NonePrompter implements Prompter {
-  readonly id: 'none' = 'none';
+  readonly id = 'none' as const;
 
   async available(): Promise<boolean> {
     return true;

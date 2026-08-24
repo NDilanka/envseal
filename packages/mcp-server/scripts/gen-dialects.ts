@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { INPUT_SCHEMAS, SEP_TOOL_NAMES } from '@envseal/protocol';
+
 
 import * as describe from '../src/tools/describe.js';
 import * as declare from '../src/tools/declare.js';

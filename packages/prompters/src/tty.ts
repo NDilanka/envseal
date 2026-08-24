@@ -17,7 +17,7 @@ import type {
 const POSIX_DEVICE = '/dev/tty';
 const WIN_IN = 'CONIN$';
 const WIN_OUT = 'CONOUT$';
-const ENABLE_ECHO_INPUT = 0x4;
+
 
 function isPosix(): boolean {
   return process.platform !== 'win32';
@@ -99,7 +99,7 @@ function setWinConinEcho(enabled: boolean): Promise<void> {
 }
 
 export class TtyPrompter implements Prompter {
-  readonly id: 'tty' = 'tty';
+  readonly id = 'tty' as const;
 
   async available(): Promise<boolean> {
     try {

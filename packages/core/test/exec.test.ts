@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { asSecret } from '@envseal/protocol';
 import { SepError } from '@envseal/protocol';
 import { runWithSecrets } from '../src/exec.js';

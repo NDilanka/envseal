@@ -1,5 +1,5 @@
 import { findProjectRoot, loadManifest, projectPaths, resolvePresence } from '@envseal/core';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { stdout } from 'node:process';

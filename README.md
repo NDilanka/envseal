@@ -1,5 +1,10 @@
 # envseal
 
+[![npm version](https://img.shields.io/npm/v/@envseal/cli.svg)](https://www.npmjs.com/package/@envseal/cli)
+[![provenance](https://img.shields.io/badge/provenance-slsa%20v1-4c9f38)](https://docs.npmjs.com/generating-provenance-statements)
+[![CI](https://github.com/NDilanka/envseal/actions/workflows/ci.yml/badge.svg)](https://github.com/NDilanka/envseal/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **Your coding agent can ask for an API key without ever seeing it.**
 
 envseal is a protocol (SEP/1) and local broker for safely provisioning secrets to AI coding agents. The agent declares what it needs, the user provides it through a secure local interface, and the value is written to `.env` or a keychain — never passed through the model's transcript.
@@ -78,18 +83,23 @@ The model never constructs a value, never reads one back, and cannot receive one
 
 ## Install
 
-Not yet published to npm. Build from source:
+```bash
+npm install -D @envseal/cli
+npx envseal init
+```
+
+Every `@envseal/*` package ships with [npm provenance](https://docs.npmjs.com/generating-provenance-statements) (SLSA v1): the tarball is cryptographically attested to have been built by GitHub Actions in this repository, verifiable on each package's npm page.
+
+Build from source instead:
 
 ```bash
-git clone <this-repo> && cd envseal
+git clone https://github.com/NDilanka/envseal && cd envseal
 pnpm install && pnpm build
 
 # then, from your own project:
 node /path/to/envseal/packages/cli/dist/bin.js init
 node /path/to/envseal/packages/cli/dist/bin.js ensure
 ```
-
-Once published, this becomes `pnpm add -D @envseal/cli` and `npx envseal init`.
 
 For a runnable walk-through of the whole lifecycle (`init` → `ensure --check` → `set` → `run` → `status`), see [examples/demo](examples/demo/README.md) — CI executes that exact flow on every push.
 

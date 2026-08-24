@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Broker, redact, runWithSecrets, appendAudit, readAudit, projectPaths } from '../packages/core/dist/index.js';
+import { Broker, runWithSecrets, projectPaths } from '../packages/core/dist/index.js';
 import { secretFromUtf8, asSecret, zero, SEP_TOOL_NAMES, ManifestEntry } from '../packages/protocol/dist/index.js';
 
 const SENTINEL = 'sk-W3THREATSENTINEL0000000000000000000000000';
@@ -223,7 +223,7 @@ const stubPrompter = (value) => ({
     'console.log(encodeURIComponent(process.env.TEST_KEY));' +
     'console.log(JSON.stringify({k: process.env.TEST_KEY}));' +
     'console.log(process.env.TEST_KEY.slice(0, 24) + "... (truncated)");';
-  const res = await runWithSecrets([process.execPath, '-e', script], secrets, {
+const res = await runWithSecrets([process.execPath, '-e', script], secrets, {
     onConfirm: async () => true, timeoutMs: 15000,
   });
   const combined = `${res.stdout}${res.stderr}`;
@@ -248,7 +248,7 @@ const stubPrompter = (value) => ({
 // ===========================================================================
 {
   const secrets = new Map([['TEST_KEY', secretFromUtf8(SENTINEL)]]);
-  const res = await runWithSecrets(
+  await runWithSecrets(
     [process.execPath, '-e', 'console.log("parent has key:", "TEST_KEY" in process.env ? "?" : "?")'],
     secrets, { onConfirm: async () => true, timeoutMs: 15000 });
   const parentPolluted = process.env.TEST_KEY !== undefined;

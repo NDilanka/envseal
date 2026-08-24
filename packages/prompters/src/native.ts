@@ -194,7 +194,7 @@ function regexEscape(value: string): string {
 }
 
 export class NativePrompter implements Prompter {
-  readonly id: 'native-dialog' = 'native-dialog';
+  readonly id = 'native-dialog' as const;
 
   private adapter(): NativeAdapter {
     if (process.platform === 'darwin') {

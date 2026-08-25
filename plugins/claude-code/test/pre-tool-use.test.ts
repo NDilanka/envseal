@@ -389,6 +389,39 @@ describe('pre-tool-use hook', () => {
     });
   });
 
+  // Audit follow-up: a shell or eval executes a payload STRING whose real
+  // head the segment scanner never sees — in `sh -c "cat .env"` the only
+  // surface head is `sh`, which matches no reader rule, so the file read
+  // sailed through. The payload has to go through the same scanner the
+  // outer command went through.
+  describe('decide - shell -c / eval payload recursion', () => {
+    const payloads: Array<{ label: string; command: string }> = [
+      { label: 'sh -c cat .env', command: "sh -c 'cat .env'" },
+      { label: 'bash -c head -50 .env', command: 'bash -c "head -50 .env"' },
+      { label: 'eval cat .env', command: 'eval "cat .env"' },
+    ];
+
+    for (const payload of payloads) {
+      it(`denies ${payload.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: payload.command });
+        // Unconditional reason check: a deny without an actionable alternative
+        // is a dead end for the model (see denial-messages suite).
+        expect(decision.allow, payload.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('allows benign sh -c echo', () => {
+      const decision = decide({ tool: 'Bash', command: "sh -c 'echo hi'" });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows benign sh -c ls of a source dir', () => {
+      const decision = decide({ tool: 'Bash', command: "sh -c 'ls src'" });
+      expect(decision.allow).toBe(true);
+    });
+  });
+
   describe('denial messages have alternatives', () => {
     const denialCases = [
       { tool: 'Read' as const, path: '.env' },

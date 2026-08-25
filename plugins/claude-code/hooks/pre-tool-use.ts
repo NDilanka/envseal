@@ -88,6 +88,17 @@ const FILE_READERS = new Set([
 // `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner
 // reader never got a segment of its own to be checked against.
 const SEGMENT_SPLIT_RE = /\s*(?:&&|\|\||;|\||\(|\)|\n|`)\s*/;
+// Audit follow-up: `sh -c "cat .env"` executes a payload STRING whose real
+// head (`cat`) never appears at the surface — head matching sees only `sh`,
+// which matches no reader rule. These shell heads (when they carry -c) and
+// `eval` execute such a payload, so the payload must be scanned itself
+// instead of passing on its wrapper's innocence.
+const SHELL_C_HEADS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'busybox']);
+/** How deep `sh -c "sh -c …"` nesting is followed. Generous enough for real
+ *  commands, small enough that adversarial nesting cannot make the scanner
+ *  do unbounded work; beyond the cap we fail open (heuristic layer, not a
+ *  sandbox). */
+const MAX_PAYLOAD_DEPTH = 3;
 /** Tools that name a file to read or mutate. Kept in sync with the PreToolUse
  *  matcher in hooks/hooks.json — a tool listed in one and not the other is a
  *  hole in the guard. plugin-contract.test.ts reads this list to assert that
@@ -206,6 +217,35 @@ export function headOf(segment: string): string {
   return head.split('/').pop() ?? head;
 }
 
+/**
+ * Extract the command string a `shell -c` / `eval` invocation will execute,
+ * or null when this segment carries no such payload. Quote-aware on purpose:
+ * naive token splitting would shred `'cat .env'` at the space inside the
+ * quotes and leave a headless fragment. Gating happens on the wrapper head
+ * (wrapper-stripped, so `sudo sh -c …` counts) BEFORE extraction, so flags
+ * of unrelated commands (`git -c foo=bar status`) can never match.
+ */
+export function dashCPayload(segment: string): string | null {
+  const stripped = stripAssignments(segment);
+  const head = headOf(stripped);
+  const carriesDashC = stripped
+    .split(/\s+/)
+    .some((token) => /^-[A-Za-z]*c$/.test(token));
+  if (!((SHELL_C_HEADS.has(head) && carriesDashC) || head === 'eval')) {
+    return null;
+  }
+  // The payload is the first non-flag argument after the -c/eval marker —
+  // shell semantics for -c, and eval's interesting argument is quoted too.
+  const match = /(?:^|\s)(?:-[A-Za-z]*c|eval)\s+(?:'([^']*)'|"([^"]*)"|(\S+))/.exec(stripped);
+  const raw = match?.[1] ?? match?.[2] ?? match?.[3];
+  if (raw === undefined || raw === '') {
+    return null;
+  }
+  // A bare-word capture may still wear one layer of quotes.
+  const unquoted = raw.replace(/^['"]|['"]$/g, '');
+  return unquoted === '' ? null : unquoted;
+}
+
 export function isSecretShapedPattern(pattern: string): boolean {
   if (pattern.length === 0) {
     return false;
@@ -304,7 +344,7 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
   return { allow: true };
 }
 
-export function decideBash(command: string, declared: Set<string>): Decision {
+export function decideBash(command: string, declared: Set<string>, depth = 0): Decision {
   const commands = splitCommand(command);
 
   // Whole-command rules.
@@ -361,6 +401,20 @@ export function decideBash(command: string, declared: Set<string>): Decision {
             `Blocked: \`${head}\` on secret path \`${denied}\` would put its contents in the transcript. ` +
             'Use `env_describe` for status or `env_verify` to test the key.',
         };
+      }
+    }
+
+    // Audit follow-up: a `-c`/eval payload runs through the SAME scanner so
+    // an inner `cat .env` is judged exactly like a top-level one. Depth-capped
+    // (see MAX_PAYLOAD_DEPTH): deeper nesting fails open rather than recursing
+    // without bound on adversarial input.
+    if (depth < MAX_PAYLOAD_DEPTH) {
+      const payload = dashCPayload(segment);
+      if (payload !== null) {
+        const nested = decideBash(payload, declared, depth + 1);
+        if (!nested.allow) {
+          return { allow: false, reason: nested.reason };
+        }
       }
     }
 

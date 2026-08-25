@@ -12,6 +12,7 @@ import { verify } from './commands/verify.js';
 import { run } from './commands/run.js';
 import { doctor } from './commands/doctor.js';
 import { revoke } from './commands/revoke.js';
+import { audit } from './commands/audit.js';
 import { mcp } from './commands/mcp.js';
 import { init } from './commands/init.js';
 
@@ -133,6 +134,11 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'audit': {
+        await audit(root, json, parsed.flags.verify === true);
+        break;
+      }
+
       case 'mcp': {
         await mcp(root);
         break;
@@ -165,6 +171,8 @@ Commands:
   run -- <cmd...>               Execute command with injected secrets
   doctor                        Report project configuration status
   revoke <KEY>                  Revoke a key from the sink
+  audit [--verify]              Print audit events (--json for machine form);
+                                --verify checks the log's tamper-evidence chain
   mcp                           Start the MCP server
 
 Global Options:

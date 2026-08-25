@@ -8,6 +8,7 @@ export const EXIT = {
   NO_SURFACE: 4,
   SINK_FAILURE: 5,
   VERIFY_FAILED: 6,
+  AUDIT_CHAIN_FAILED: 7,
 } as const;
 
 export function exitCodeForError(e: unknown): number {

@@ -13,6 +13,7 @@
 | 4 | `NO_SURFACE` | No interactive prompt surface available (e.g., CI) | Yes |
 | 5 | `SINK_FAILURE` | Failed to read from or write to the configured sink | Yes |
 | 6 | `VERIFY_FAILED` | Verification probe failed | Yes |
+| 7 | `AUDIT_CHAIN_FAILED` | Audit log hash chain failed verification (`audit --verify`) | No |
 
 *UNSATISFIED is retriable in the sense that running `ensure` again may succeed if the user provides the keys.
 
@@ -364,6 +365,34 @@ Start the MCP server over stdio. Intended for integration with MCP-capable hosts
 - The exit code of the `envseal-mcp` child process.
 - 5 — The server binary could not be started (not installed, not on PATH, or
   not executable). A failure here is never reported as success.
+
+---
+
+### `envseal audit [--verify]`
+
+Print the project's audit log (`.envseal/audit.jsonl`) — provisioning events
+plus every `env_use` execution attempt and its result. Works without a
+manifest; a missing log prints "No audit events recorded." and exits 0.
+
+| Flag | Effect |
+|---|---|
+| *(none)* | Human-readable event lines in log order |
+| `--json` | The parsed event array as a single JSON array |
+| `--verify` | Check the tamper-evidence hash chain instead of listing events |
+
+With `--json --verify`, stdout is one JSON object: `{ok: true, count: N}` when
+intact, `{ok: false, brokenAt: K, count: N}` otherwise.
+
+**Exit codes:**
+- 0 — chain intact (or no log: intact with zero records)
+- 7 — `AUDIT_CHAIN_FAILED`: records were edited, deleted, reordered, or
+  spliced after the fact. Every record after the break is untrusted.
+
+**Honest boundary:** the chain proves surviving records are intact and
+ordered; it cannot detect deletion of the log *tail*, because nothing outside
+the log records how many records should exist. An agent that can run
+arbitrary shell can also delete the whole file — this is tamper *evidence*,
+not immutability (see docs/residual-risks.md).
 
 ---
 

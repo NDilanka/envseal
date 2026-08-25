@@ -83,6 +83,24 @@ const FILE_READERS = new Set([
   'rg',
   'bat',
   'nl',
+  // Audit follow-up: encoders and printers emit file contents just like cat
+  // does — into the transcript, a pipe, or an encoded artifact — so they ride
+  // the same rule: denied only when an argument references a denied secret
+  // path. openssl stays OUT on purpose (it legitimately processes arbitrary
+  // binary input) and gets its own argument check in decideBash instead.
+  'base64',
+  'certutil',
+  'hexdump',
+  'sort',
+  'tac',
+  'rev',
+  'fold',
+  'paste',
+  'uniq',
+  'column',
+  'jq',
+  'yq',
+  'diff',
 ]);
 // W3-07: backticks are command substitution too. Without splitting on them,
 // `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner
@@ -105,6 +123,11 @@ const MAX_PAYLOAD_DEPTH = 3;
 // interpreter invocation that NAMES a denied secret basename in any argument
 // is treated as a read of that file.
 const INTERPRETER_HEADS = new Set(['python', 'python3', 'node', 'deno', 'bun', 'perl', 'ruby', 'php']);
+// Audit follow-up: copiers don't print contents, but they relocate secret
+// material (`cp .env notes.tmp`, `ln -s .env t.txt`) or overwrite it
+// (`dd of=.env`) with no reader head on the segment — the copy is typically
+// read from somewhere else later.
+const COPIERS = new Set(['cp', 'dd', 'ln', 'install', 'mv', 'rsync']);
 /** Tools that name a file to read or mutate. Kept in sync with the PreToolUse
  *  matcher in hooks/hooks.json — a tool listed in one and not the other is a
  *  hole in the guard. plugin-contract.test.ts reads this list to assert that
@@ -432,6 +455,24 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
           allow: false,
           reason:
             `Blocked: \`${head}\` on secret path \`${denied}\` would put its contents in the transcript. ` +
+            'Use `env_describe` for status or `env_verify` to test the key.',
+        };
+      }
+    }
+
+    // Audit follow-up: a copier head — and openssl, which escapes
+    // FILE_READERS because it legitimately processes arbitrary binaries — is
+    // denied only when an argument names a denied secret path. The scan
+    // reuses the shared chunk matcher: '=' is a chunk boundary there, so dd's
+    // if=/of= VALUES go through isDeniedSecretPath even though `dd` carries
+    // no bare `.env` token.
+    if (COPIERS.has(head) || head === 'openssl') {
+      const named = interpreterNamesSecretPath(segment);
+      if (named !== null) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: \`${head}\` naming \`${named}\` would copy or encode the secret file outside the guarded read paths. ` +
             'Use `env_describe` for status or `env_verify` to test the key.',
         };
       }

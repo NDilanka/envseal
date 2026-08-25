@@ -461,6 +461,71 @@ describe('pre-tool-use hook', () => {
     });
   });
 
+  // Audit follow-up: copiers relocate secret files without ever printing them
+  // (the copy gets read somewhere else later), while encoders and printers
+  // emit the contents themselves — the same transcript-leak class as `cat`,
+  // but none of these heads had a rule. openssl is deliberately NOT in
+  // FILE_READERS (it legitimately processes arbitrary binary input), so it is
+  // denied only when an argument names a denied secret path.
+  describe('decide - copiers, encoders, printers naming secret paths', () => {
+    const leaks: Array<{ label: string; command: string }> = [
+      { label: 'cp copies .env elsewhere', command: 'cp .env notes.tmp' },
+      // dd carries no bare `.env` token — the path hides behind if=/of=.
+      { label: 'dd reads .env through if=', command: 'dd if=.env status=none' },
+      { label: 'dd overwrites .env through of=', command: 'dd if=/dev/null of=.env' },
+      { label: 'ln symlinks .env', command: 'ln -s .env t.txt' },
+      { label: 'install copies .env with a mode', command: 'install -m600 .env /tmp/x' },
+      { label: 'base64 encodes .env to stdout', command: 'base64 .env' },
+      { label: 'openssl base64 reads .env via -in', command: 'openssl base64 -in .env' },
+      { label: 'certutil encodes .env', command: 'certutil -encode .env out.b64' },
+      { label: 'hexdump dumps .env', command: 'hexdump -C .env' },
+      { label: 'sort prints .env ordered', command: 'sort .env' },
+      { label: 'tac prints .env reversed', command: 'tac .env' },
+      { label: 'rev prints .env flipped', command: 'rev .env' },
+      { label: 'fold prints .env wrapped', command: 'fold -w9999 .env' },
+      // Literal backslash-n on purpose: paste's CLI delimiter is written \n,
+      // and a REAL newline would be torn apart by the segment splitter into a
+      // headless fragment no reader rule could match.
+      { label: 'paste prints .env joined', command: 'paste -sd\\n .env' },
+      { label: 'uniq prints .env filtered', command: 'uniq .env' },
+      { label: 'column prints .env tabulated', command: 'column .env' },
+      { label: 'jq pretty-prints secrets.json', command: 'jq . secrets.json' },
+      { label: 'yq evaluates secrets.yaml', command: 'yq . secrets.yaml' },
+      { label: 'diff prints the .env side of a /dev/null comparison', command: 'diff /dev/null .env' },
+    ];
+
+    for (const leak of leaks) {
+      it(`denies ${leak.label}: ${leak.command}`, () => {
+        const decision = decide({ tool: 'Bash', command: leak.command });
+        // Unconditional reason check: a deny without an actionable alternative
+        // is a dead end for the model (see denial-messages suite).
+        expect(decision.allow, leak.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('allows cp of ordinary sources', () => {
+      const decision = decide({ tool: 'Bash', command: 'cp src/main.ts backup/' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows sort/base64/diff on ordinary files', () => {
+      expect(decide({ tool: 'Bash', command: 'sort data.txt' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'base64 logo.png' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'diff a.txt b.txt' }).allow).toBe(true);
+    });
+
+    it('allows openssl when no argument names a secret path', () => {
+      const decision = decide({ tool: 'Bash', command: 'openssl base64 -in plain.txt' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows benign mv/rsync', () => {
+      expect(decide({ tool: 'Bash', command: 'mv notes.txt archive.txt' }).allow).toBe(true);
+      expect(decide({ tool: 'Bash', command: 'rsync -av build/ dist/' }).allow).toBe(true);
+    });
+  });
+
   describe('denial messages have alternatives', () => {
     const denialCases = [
       { tool: 'Read' as const, path: '.env' },

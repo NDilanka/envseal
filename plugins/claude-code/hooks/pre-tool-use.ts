@@ -5,8 +5,20 @@ import { readPayload, writeResult } from './lib.js';
  * §8.1 — Pre-tool-use hook.
  *
  * Blocks reads/edits/writes and Bash commands that would expose environment
- * secret values into the transcript. Fail-open: any internal error (missing
- * manifest, malformed command) returns allow.
+ * secret values into the transcript.
+ *
+ * Failure modes (GAP-HOOK-1): the hook is FAIL-OPEN by default — any internal
+ * error (missing manifest, malformed payload, crashed scanner) returns allow,
+ * because a broken hook must not wedge every tool call in a session. Fail-open
+ * is never silent: before the allow decision is written, one fixed line goes
+ * to stderr so operators can see the guard is down. Neither the payload nor
+ * the error object is ever printed — either can carry secret-shaped text.
+ *
+ * ENVSEAL_HOOK_FAIL_CLOSED — opt-in flip of that default. Set to exactly "1"
+ * (any other value, including "0" or "true", keeps the fail-open default), an
+ * internal error DENIES with reason "envseal hook failed closed by policy"
+ * instead of allowing: availability is traded for guaranteed coverage on
+ * machines where a silently-allowing guard is worse than a blocking one.
  */
 
 export interface ToolCall {
@@ -910,31 +922,70 @@ export function toHookOutput(decision: Decision): PreToolUseHookOutput {
   };
 }
 
-export function run(): Promise<void> {
-  return readPayload<Payload>()
+/**
+ * stdin/stdout/stderr plumbing for run(), injectable so unit tests can drive
+ * the hook end-to-end (malformed payload included) without spawning a process.
+ */
+interface RunIo {
+  read: () => Promise<unknown>;
+  write: (result: unknown) => void;
+  error: (line: string) => void;
+}
+
+const DEFAULT_IO: RunIo = {
+  read: () => readPayload<Payload>(),
+  write: writeResult,
+  error: (line) => process.stderr.write(line),
+};
+
+/**
+ * The decision an internal error falls back to. Fail-open unless
+ * ENVSEAL_HOOK_FAIL_CLOSED is set to exactly "1" — see the failure-modes
+ * comment at the top of this file. Never embeds error detail in the reason:
+ * errors and payloads can carry secret-shaped text.
+ */
+export function internalErrorDecision(failClosed?: string): Decision {
+  const setting = failClosed ?? process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+  if (setting === '1') {
+    return { allow: false, reason: 'envseal hook failed closed by policy' };
+  }
+  return { allow: true };
+}
+
+export function run(io: RunIo = DEFAULT_IO): Promise<void> {
+  return io
+    .read()
     .then((payload) => {
-      const call = normalizePayload(payload);
-      const root = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
+      const p = (payload ?? {}) as Payload;
+      const call = normalizePayload(p);
+      const root = typeof p.cwd === 'string' ? p.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
-      const decision = decide(call, { declaredSecrets });
-      return toHookOutput(decision);
+      return toHookOutput(decide(call, { declaredSecrets }));
     })
     .then((result) => {
-      writeResult(result);
+      io.write(result);
+    })
+    .catch(() => {
+      // GAP-HOOK-1: an internal error must never pass silently — but it must
+      // never leak detail either. One fixed stderr line (no payload, no error
+      // text), then the policy decision through the normal output contract.
+      const decision = internalErrorDecision();
+      io.error(
+        decision.allow
+          ? 'envseal hook: internal error — decision defaulted to ALLOW\n'
+          : 'envseal hook: internal error — ENVSEAL_HOOK_FAIL_CLOSED=1, denying\n',
+      );
+      io.write(toHookOutput(decision));
     });
 }
 
 if (process.argv[1] !== undefined) {
   const isMain = /pre-tool-use(?:\.cjs|\.js|\.ts)?$/.test(process.argv[1]);
   if (isMain) {
-    run().catch((error: unknown) => {
-      // Fail open: an internal error must not block tool use.
-      writeResult({
-        ...toHookOutput({
-          allow: true,
-          reason: `envseal hook error: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      });
-    });
+    // run() handles its own internal errors; this final net only covers the
+    // failure handler itself throwing. Nothing safe is left to write at that
+    // point, and Claude Code allows a hook that emits no deny output — so
+    // exiting quietly here IS the fail-open default.
+    run().catch(() => {});
   }
 }

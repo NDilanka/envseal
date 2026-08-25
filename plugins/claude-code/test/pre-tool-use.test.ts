@@ -10,6 +10,9 @@ import {
   grepIsRecursive,
   grepPattern,
   isSecretShapedPattern,
+  internalErrorDecision,
+  run,
+  toHookOutput,
 } from '../hooks/pre-tool-use.js';
 
 describe('pre-tool-use hook', () => {
@@ -816,6 +819,106 @@ describe('pre-tool-use hook', () => {
     it('allows reading about procfs rather than from it', () => {
       const decision = decide({ tool: 'Bash', command: 'man proc' });
       expect(decision.allow, `man proc: ${decision.reason ?? ''}`).toBe(true);
+    });
+  });
+
+  // GAP-HOOK-1 (T3.8): an internal error used to allow SILENTLY — the only
+  // trace was a reason string that embedded error.message, i.e. exactly the
+  // secret-shaped text the hook exists to contain. Failure is now loud (fixed
+  // stderr line, zero detail) and optionally fail-closed via
+  // ENVSEAL_HOOK_FAIL_CLOSED=1.
+  describe('internal error fail-mode (GAP-HOOK-1)', () => {
+    const FAIL_OPEN_NOTICE = 'envseal hook: internal error — decision defaulted to ALLOW';
+
+    function withoutFailClosedEnv(): string | undefined {
+      const previous = process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      return previous;
+    }
+
+    function restoreFailClosedEnv(previous: string | undefined): void {
+      if (previous === undefined) {
+        delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      } else {
+        process.env.ENVSEAL_HOOK_FAIL_CLOSED = previous;
+      }
+    }
+
+    it('defaults to fail-open when the env var is unset', () => {
+      const previous = withoutFailClosedEnv();
+      try {
+        expect(internalErrorDecision()).toEqual({ allow: true });
+      } finally {
+        restoreFailClosedEnv(previous);
+      }
+    });
+
+    it('keeps fail-open for any value other than exactly "1"', () => {
+      for (const value of ['0', 'true', 'yes', '1 ', 'on', '']) {
+        expect(internalErrorDecision(value), `ENVSEAL_HOOK_FAIL_CLOSED=${value}`).toEqual({
+          allow: true,
+        });
+      }
+    });
+
+    it('denies when ENVSEAL_HOOK_FAIL_CLOSED is exactly "1"', () => {
+      expect(internalErrorDecision('1')).toEqual({
+        allow: false,
+        reason: 'envseal hook failed closed by policy',
+      });
+    });
+
+    it('malformed JSON on stdin still allows, loudly on stderr, detail-free', async () => {
+      const errLines: string[] = [];
+      const written: unknown[] = [];
+      await run({
+        read: () => Promise.reject(new SyntaxError('Unexpected token X in JSON at position 0')),
+        write: (result) => written.push(result),
+        error: (line) => errLines.push(line),
+      });
+      expect(errLines.join('')).toContain(FAIL_OPEN_NOTICE);
+      // Detail-free on purpose: neither the synthetic error message nor any
+      // payload text may ride along with the notice.
+      expect(errLines.join('')).not.toContain('Unexpected token');
+      expect(written).toEqual([toHookOutput({ allow: true })]);
+    });
+
+    it('with ENVSEAL_HOOK_FAIL_CLOSED=1 an internal error denies', async () => {
+      const previous = process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      process.env.ENVSEAL_HOOK_FAIL_CLOSED = '1';
+      try {
+        const errLines: string[] = [];
+        const written: unknown[] = [];
+        await run({
+          read: () => Promise.reject(new Error('manifest exploded')),
+          write: (result) => written.push(result),
+          error: (line) => errLines.push(line),
+        });
+        expect(written).toEqual([
+          toHookOutput({ allow: false, reason: 'envseal hook failed closed by policy' }),
+        ]);
+        expect(errLines.join('')).toContain('denying');
+        expect(errLines.join('')).not.toContain('manifest exploded');
+      } finally {
+        restoreFailClosedEnv(previous);
+      }
+    });
+
+    it('valid payloads still decide normally through run()', async () => {
+      const previous = withoutFailClosedEnv();
+      try {
+        const errLines: string[] = [];
+        const written: unknown[] = [];
+        await run({
+          read: () => Promise.resolve({ tool_name: 'Read', tool_input: { file_path: '.env' } }),
+          write: (result) => written.push(result),
+          error: (line) => errLines.push(line),
+        });
+        expect(errLines).toEqual([]);
+        expect(written).toEqual([toHookOutput(decide({ tool: 'Read', path: '.env' }))]);
+      } finally {
+        restoreFailClosedEnv(previous);
+      }
     });
   });
 });

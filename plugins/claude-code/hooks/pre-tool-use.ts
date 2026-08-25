@@ -1,4 +1,7 @@
 import { findProjectRoot, loadManifest, projectPaths } from '@envseal/core';
+import { detect } from '@envseal/detector';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { readPayload, writeResult } from './lib.js';
 
 /**
@@ -18,6 +21,8 @@ export interface ToolCall {
 export interface PreToolUseContext {
   /** Declared secret keys from the manifest, uppercased. */
   declaredSecrets?: string[];
+  /** Working directory for resolving relative file paths (hook payload cwd). */
+  cwd?: string;
 }
 
 export interface Decision {
@@ -175,6 +180,33 @@ export function isDeniedSecretPath(path: string): boolean {
   }
 
   return false;
+}
+
+/** H5: manifest reads are allowed, but not when comments hold secret-shaped text. */
+export function isEnvSchemaJsoncPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  const base = norm.split('/').pop() ?? norm;
+  return base === 'env.schema.jsonc';
+}
+
+export const ENV_SCHEMA_SECRET_DENY_REASON =
+  'Blocked: env.schema.jsonc contains secret-shaped text. Remove it from the file (including comments); store values with envseal, not in the manifest.';
+
+function resolveFilePath(path: string, cwd: string): string {
+  return isAbsolute(path) ? path : join(cwd, path);
+}
+
+/** Scan on-disk manifest text; fail-open when the file is missing or unreadable. */
+export function envSchemaJsoncHasHighConfidenceSecret(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+    const text = readFileSync(filePath, 'utf8');
+    return detect(text).some((d) => d.confidence === 'high');
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -448,6 +480,13 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
           'Use `env_describe` for status or `env_verify` to test the key.',
       };
     }
+    if (path !== undefined && isEnvSchemaJsoncPath(path)) {
+      const cwd = context?.cwd ?? process.cwd();
+      const resolved = resolveFilePath(path, cwd);
+      if (envSchemaJsoncHasHighConfidenceSecret(resolved)) {
+        return { allow: false, reason: ENV_SCHEMA_SECRET_DENY_REASON };
+      }
+    }
     return { allow: true };
   }
 
@@ -704,7 +743,7 @@ export function run(): Promise<void> {
       const call = normalizePayload(payload);
       const root = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
-      const decision = decide(call, { declaredSecrets });
+      const decision = decide(call, { declaredSecrets, cwd: root });
       return toHookOutput(decision);
     })
     .then((result) => {

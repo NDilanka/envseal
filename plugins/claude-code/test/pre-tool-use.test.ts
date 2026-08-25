@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   normalizePayload,
   isDeniedSecretPath,
@@ -14,6 +17,7 @@ import {
   analyzeShellNesting,
   MAX_PAYLOAD_DEPTH,
   stripEnvInvocationPrefix,
+  ENV_SCHEMA_SECRET_DENY_REASON,
 } from '../hooks/pre-tool-use.js';
 
 describe('pre-tool-use hook', () => {
@@ -245,6 +249,23 @@ describe('pre-tool-use hook', () => {
   });
 
   describe('decide - file operations', () => {
+    const manifestSentinel =
+      'sk-proj-FAKE7Qm2Xp9Lz4Rv8Nc3Bd6Hk1Ws5Yt0Ju7Gi2Ae4Of6Pl9Zx3Cn8Mb';
+    let manifestTmpDir: string | undefined;
+
+    afterEach(() => {
+      if (manifestTmpDir !== undefined) {
+        rmSync(manifestTmpDir, { recursive: true, force: true });
+        manifestTmpDir = undefined;
+      }
+    });
+
+    function writeManifest(content: string): string {
+      manifestTmpDir = mkdtempSync(join(tmpdir(), 'envseal-manifest-'));
+      writeFileSync(join(manifestTmpDir, 'env.schema.jsonc'), content, 'utf8');
+      return manifestTmpDir;
+    }
+
     it('denies Read .env', () => {
       const decision = decide({ tool: 'Read', path: '.env' });
       expect(decision.allow).toBe(false);
@@ -257,7 +278,28 @@ describe('pre-tool-use hook', () => {
       expect(decision.allow).toBe(true);
     });
 
-    it('allows Read env.schema.jsonc', () => {
+    it('allows Read env.schema.jsonc when the file is clean', () => {
+      const cwd = writeManifest('{\n  "version": 1,\n  "entries": []\n}\n');
+      const decision = decide(
+        { tool: 'Read', path: 'env.schema.jsonc' },
+        { cwd },
+      );
+      expect(decision.allow).toBe(true);
+    });
+
+    it('denies Read env.schema.jsonc when comments contain secret-shaped text', () => {
+      const cwd = writeManifest(`// ${manifestSentinel}\n{\n  "version": 1,\n  "entries": []\n}\n`);
+      const decision = decide(
+        { tool: 'Read', path: 'env.schema.jsonc' },
+        { cwd },
+      );
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toBe(ENV_SCHEMA_SECRET_DENY_REASON);
+      expect(decision.reason ?? '').not.toContain(manifestSentinel);
+      expect(decision.reason ?? '').not.toContain('sk-proj-');
+    });
+
+    it('allows Read env.schema.jsonc when the file is missing', () => {
       const decision = decide({ tool: 'Read', path: 'env.schema.jsonc' });
       expect(decision.allow).toBe(true);
     });

@@ -9,7 +9,7 @@ import type { SepErrorCode } from '../src/errors.js';
 
 describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
   it('declares a default for every error code', () => {
-    expect(SEP_ERROR_CODES.length).toBe(15);
+    expect(SEP_ERROR_CODES.length).toBe(16);
     for (const code of SEP_ERROR_CODES) {
       const defaults = SEP_ERROR_DEFAULTS[code];
       expect(defaults).toBeDefined();
@@ -59,6 +59,8 @@ describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
           return true;
         case 'SEP_RATE_LIMITED':
           return true;
+        case 'SEP_EGRESS_DENIED':
+          return false;
       }
     };
     for (const code of SEP_ERROR_CODES) {

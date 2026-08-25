@@ -8,7 +8,6 @@ import {
   appendAudit,
   verifyAuditChain,
   GENESIS_PREV,
-  type AuditEvent,
 } from '../src/audit.js';
 
 function sha256(line: string): string {

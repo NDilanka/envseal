@@ -13,10 +13,12 @@ Cursor rules are advisory, not enforced. Treat these as hard rules regardless.
 Instead, use the envseal broker via MCP:
 
 - `env_describe` — read-only status of the declared keys (present, format-valid, last verified). It never returns values and there is no way to make it do so.
-- `env_request` — collect the missing keys from the user through a secure prompt. It returns a ticket, never a value; follow up with `env_await`.
+- `env_describe` — read-only status of the declared keys (present, format-valid, last verified). It never returns values and there is no way to make it do so.
 - `env_declare` — declare a key this project needs, with format and provider metadata.
+- `env_request` — collect the missing keys from the user through a secure prompt. It returns a ticket, never a value.
+- `env_await` — poll that ticket until the user finishes. Outcomes only (stored, cancelled, invalid_format); never a value.
 - `env_verify` — test that a key actually works (classified result only).
 - `env_use` — run a command with secrets injected into the child process; output is redacted.
-- `env_revoke` — remove a key and get the rotation URL.
+- `env_revoke` — remove a key after user confirmation and get the rotation URL.
 
 If a required key is missing, `env_request` it. Never read `.env` to find it, and never print it back.

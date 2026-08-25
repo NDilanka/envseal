@@ -221,6 +221,18 @@ function interpreterDenial(head: string, named: string): Decision {
 }
 
 /**
+ * The first denied secret basename named anywhere in a git command's text, or
+ * null. Chunks additionally split on `:` so blob revs like `HEAD:.env`
+ * resolve to their `.env` component — the colon form is how `git show`
+ * prints history, and it is exactly the shape T7 cannot prevent.
+ */
+export function gitNamesSecretPath(segment: string): string | null {
+  const chunks = segment.split(/[\s'"`(){}[\],;=`:<>]/);
+  const denied = chunks.find((chunk) => chunk.length > 0 && isDeniedSecretPath(chunk));
+  return denied ?? null;
+}
+
+/**
  * Split a command into pipeline/boolean segments. Returns the head command of
  * each segment so `cd x && cat .env` exposes the same signal as `cat .env`.
  */
@@ -402,6 +414,10 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
   // later paren-fragments of its quoted payload are re-tested against this
   // joined text (see the interpreter block inside the loop below).
   let interpreterPayload: string | null = null;
+  // Accumulator for the git-history rule — same fragment-rejoin problem,
+  // plus retention of the first git subcommand across all its fragments.
+  let gitPayload: string | null = null;
+  let gitSub = '';
 
   // Whole-command rules.
   if (/\bexport\s+(?:-\w+\s+)*-p\b/.test(command)) {
@@ -503,6 +519,44 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
     // denied basename with no interpreter head. So the payload accumulates
     // across consecutive fragments and is re-tested as one string; without
     // the rejoin only paren-free payloads (perl's diamond read) were caught.
+    // Audit follow-up: git object reads print committed file contents into
+    // the transcript even though T7 keeps future tracking out — history from
+    // before envseal, or `.env.local` variants, is still one command away.
+    // Like the interpreter rule below, the payload ACCUMULATES across
+    // paren-fragments (`$(git hash-object .env)` tears a cat-file command in
+    // two) and the first git subcommand is remembered for all of them.
+    // Colon forms (`HEAD:.env`) resolve through the dedicated chunker; fsck
+    // is denied only when it would surface unreachable objects (--lost-found
+    // / --unreachable), since a bare reachability check reveals no contents.
+    if (head === 'git') {
+      if (gitPayload === null) {
+        gitPayload = segment;
+        gitSub = segment.trim().split(/\s+/)[1] ?? '';
+      } else {
+        gitPayload += ` ; ${rawSegment}`;
+      }
+      const named = gitNamesSecretPath(gitPayload);
+      if (
+        (gitSub === 'show' || gitSub === 'log' || gitSub === 'cat-file' || gitSub === 'reflog') &&
+        named !== null
+      ) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: \`git ${gitSub}\` would print \`${named}\` contents from git history into the transcript. ` +
+            'Use `env_describe` for status or `env_verify` to test the key.',
+        };
+      }
+      if (gitSub === 'fsck' && /--lost-found|--unreachable/.test(gitPayload)) {
+        return {
+          allow: false,
+          reason:
+            'Blocked: `git fsck --lost-found` surfaces dangling blobs, which can include committed secret files. ' +
+            'Use `env_describe` for status or `env_verify` to test the key.',
+        };
+      }
+    }
+
     if (INTERPRETER_HEADS.has(head)) {
       interpreterPayload = segment;
       const named = interpreterNamesSecretPath(segment);

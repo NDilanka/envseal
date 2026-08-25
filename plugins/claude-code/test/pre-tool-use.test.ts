@@ -554,4 +554,42 @@ describe('pre-tool-use hook', () => {
       });
     }
   });
+
+  // Audit follow-up (W9 GAP-HOOK-7): git can print a secret file's contents
+  // from history even after it left the working tree — `git show HEAD:.env`,
+  // `git log -p -- .env`, dangling blobs via `cat-file`/`fsck`. T7 only
+  // prevents FUTURE tracking; reads of already-committed history are denied
+  // here instead.
+  describe('decide - git object reads of secret paths', () => {
+    const denials: Array<{ label: string; command: string }> = [
+      { label: 'git show of .env blob', command: 'git show HEAD:.env' },
+      { label: 'git show of .env.local blob', command: 'git show main:.env.local' },
+      { label: 'git log patch on .env', command: 'git log -p -- .env' },
+      { label: 'git cat-file of a blob', command: "git cat-file -p '$(git hash-object .env)'" },
+      { label: 'git fsck lost-found sweep', command: 'git fsck --lost-found' },
+    ];
+
+    for (const testCase of denials) {
+      it(`denies ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        // Unconditional reason check — see the interpreter suite above.
+        expect(decision.allow, testCase.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    const allows: Array<{ label: string; command: string }> = [
+      { label: 'plain status', command: 'git status' },
+      { label: 'oneline log', command: 'git log --oneline -5' },
+      { label: 'show of an ordinary file', command: 'git show HEAD:README.md' },
+      { label: 'diff of tracked changes', command: 'git diff' },
+    ];
+
+    for (const testCase of allows) {
+      it(`allows ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, `${testCase.command}: ${decision.reason ?? ''}`).toBe(true);
+      });
+    }
+  });
 });

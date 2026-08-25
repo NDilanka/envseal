@@ -390,6 +390,8 @@ When `--json` is set and an error occurs:
 
 The `code` is from the SEP/1 specification error codes. The `userMessage` is always safe to display to the user and never contains a secret value. The `retriable` flag indicates whether retrying the operation may succeed.
 
+Since 0.1.3, `env_use` approval binds to file **content**: every argument naming a readable file is SHA-256 fingerprinted before the confirmation dialog opens (the dialog shows path + fingerprint), and every fingerprint is re-verified against fresh disk content immediately before spawn. A mismatch returns `SEP_TARGET_CHANGED` with nothing executed — a script rewritten between "the user read the dialog" and "the command ran" does not run.
+
 ---
 
 ## Security Guarantees

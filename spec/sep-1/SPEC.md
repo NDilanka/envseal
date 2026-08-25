@@ -344,6 +344,7 @@ The value travels only: `User → prompt surface → broker → sink`, and never
 - `redactedCount` is the number of masking replacements made in the output (occurrences, not distinct secret references — one value appearing three times counts as three).
 - Requires user confirmation for every invocation, showing the full command and the keys being injected; commands that match network tools or contain URL arguments add an explicit network-egress warning on top.
 - On confirmation denial, returns `SEP_CONFIRMATION_DENIED`.
+- If a file named by the command changed on disk between approval and spawn, returns `SEP_TARGET_CHANGED` and executes nothing.
 
 ---
 
@@ -403,6 +404,7 @@ All operations that can fail return a `SepError` with one of these codes:
 | `SEP_GITIGNORE_UNSAFE` | No | `.gitignore` does not protect the sink file. |
 | `SEP_CONFIRMATION_DENIED` | No | The user denied a required confirmation (e.g., network egress). |
 | `SEP_RATE_LIMITED` | Yes | Rate-limited by the provider. Retry later. |
+| `SEP_TARGET_CHANGED` | Yes | A file named by the command changed on disk between approval and spawn. Nothing was executed; re-run to review the current content and approve again. |
 
 ---
 

@@ -765,4 +765,57 @@ describe('pre-tool-use hook', () => {
       });
     }
   });
+
+  // Audit follow-up (W9 GAP-HOOK-5): Windows shells are wrappers — the inner
+  // head (`type`, `Get-Content`) is what reads, and it must surface to the
+  // same rules a POSIX `cat` faces.
+  describe('decide - windows shell wrappers', () => {
+    const denials = [
+      { label: 'cmd /c type on .env', command: 'cmd /c type .env' },
+      { label: 'cmd.exe glued form', command: 'cmd.exe /c "type .env"' },
+      { label: 'powershell Get-Content', command: 'powershell.exe -Command Get-Content .env' },
+      { label: 'pwsh -c payload naming .env', command: "pwsh -c \"Get-Content '.env'\"" },
+    ];
+    for (const testCase of denials) {
+      it(`denies ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, testCase.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify|\/env:set/);
+      });
+    }
+
+    const allows = [
+      { label: 'cmd echo', command: 'cmd /c echo hello' },
+      { label: 'pwsh process list', command: 'pwsh -c Get-Process' },
+    ];
+    for (const testCase of allows) {
+      it(`allows ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, `${testCase.command}: ${decision.reason ?? ''}`).toBe(true);
+      });
+    }
+  });
+
+  // Audit follow-up (W9 GAP-HOOK-5): /proc/*/environ is a file-shaped read
+  // of the whole environment, including any key exported by the user's shell
+  // profile — outside manifest tracking entirely. Linux-only path, but the
+  // deny must hold wherever the hook runs.
+  describe('decide - /proc environ dumps', () => {
+    const denials = [
+      { label: 'self environ via tr', command: "tr '\\0' '\\n' < /proc/self/environ" },
+      { label: 'pid environ read', command: 'cat /proc/1234/environ' },
+    ];
+    for (const testCase of denials) {
+      it(`denies ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, testCase.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|\/env:set/);
+      });
+    }
+
+    it('allows reading about procfs rather than from it', () => {
+      const decision = decide({ tool: 'Bash', command: 'man proc' });
+      expect(decision.allow, `man proc: ${decision.reason ?? ''}`).toBe(true);
+    });
+  });
 });

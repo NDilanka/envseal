@@ -89,6 +89,11 @@ const FILE_READERS = new Set([
   'rg',
   'bat',
   'nl',
+  // Audit follow-up (W9 GAP-HOOK-5): PowerShell file readers — the inner
+  // heads of `powershell -Command Get-Content .env` and friends. Get-Content
+  // is THE PowerShell cat; gc is its built-in alias.
+  'get-content',
+  'gc',
   // Audit follow-up: encoders and printers emit file contents just like cat
   // does — into the transcript, a pipe, or an encoded artifact — so they ride
   // the same rule: denied only when an argument references a denied secret
@@ -309,7 +314,25 @@ export function headOf(segment: string): string {
   // .env` matches the same way bare `cat .env` does. Wrapper FLAGS (e.g.
   // `sudo -u root`) end the unwrapping; the denylist stays a heuristic layer,
   // not a shell parser.
-  const WRAPPERS = new Set(['sudo', 'command', 'exec', 'builtin', 'nice', 'nohup', 'xargs', 'env']);
+  const WRAPPERS = new Set([
+    'sudo',
+    'command',
+    'exec',
+    'builtin',
+    'nice',
+    'nohup',
+    'xargs',
+    'env',
+    // Windows shells are wrappers in the same sense: the inner head
+    // (`type .env`, `Get-Content .env`) is what reads. `/c`, `-c`,
+    // `-Command` carry flags, so the flag rule below ends unwrapping after
+    // one hop — the dashCPayload recursion covers the quoted-payload forms.
+    'cmd',
+    'cmd.exe',
+    'powershell',
+    'powershell.exe',
+    'pwsh',
+  ]);
   for (;;) {
     const bare = head.replace(/^["']|["']$/g, '');
     if (!WRAPPERS.has(bare)) {
@@ -321,9 +344,19 @@ export function headOf(segment: string): string {
     if (next === null) {
       break; // bare wrapper word: leave it for its own checks
     }
+    // A FLAG is not the wrapped command — `cmd /c type .env` must NOT let
+    // `/c` become the head (which basename-resolves to a meaningless `c`).
+    // Stop here and remember the flag so callers can still see it.
+    if (/^[-/]/.test(next[1]!)) {
+      break;
+    }
     head = next[1]!;
   }
-  return head.split('/').pop() ?? head;
+  // Heads resolve to lowercase basenames: FILE_READERS and every rule set
+  // key on lowercase, while real invocations arrive as `Get-Content`,
+  // `CURL`, `Type`… Command names are case-insensitive on every platform.
+  const resolved = head.split('/').pop() ?? head;
+  return resolved.toLowerCase();
 }
 
 /**
@@ -337,20 +370,25 @@ export function headOf(segment: string): string {
 export function dashCPayload(segment: string): string | null {
   const stripped = stripAssignments(segment);
   const head = headOf(stripped);
+  // POSIX shells use -c; PowerShell uses -c/-Command; cmd uses /c. All mean
+  // "run the following string", so all hand their payload to the scanner.
   const carriesDashC = stripped
     .split(/\s+/)
-    .some((token) => /^-[A-Za-z]*c$/.test(token));
-  if (!((SHELL_C_HEADS.has(head) && carriesDashC) || head === 'eval')) {
+    .some((token) => /^(-[A-Za-z]*c|\/c|-Command)$/i.test(token));
+  const isWindowsShell = /^(cmd|cmd\.exe|powershell|powershell\.exe|pwsh)(\.exe)?$/i.test(head);
+  if (!((SHELL_C_HEADS.has(head) && carriesDashC) || head === 'eval' || (isWindowsShell && carriesDashC))) {
     return null;
   }
-  // The payload is the first non-flag argument after the -c/eval marker —
-  // shell semantics for -c, and eval's interesting argument is quoted too.
-  const match = /(?:^|\s)(?:-[A-Za-z]*c|eval)\s+(?:'([^']*)'|"([^"]*)"|(\S+))/.exec(stripped);
-  const raw = match?.[1] ?? match?.[2] ?? match?.[3];
-  if (raw === undefined || raw === '') {
+  // The payload is everything after the -c/eval marker — a shell -c string
+  // may contain spaces, pipes, quoted args; truncating at the first space
+  // would recurse on a headless fragment (`type` alone) and miss the file
+  // it reads.
+  const match = /(?:^|\s)(?:-[A-Za-z]*c|-Command|\/c|eval)\s+(.*)$/i.exec(stripped);
+  const raw = match?.[1];
+  if (raw === undefined || raw.trim() === '') {
     return null;
   }
-  // A bare-word capture may still wear one layer of quotes.
+  // A payload may wear one outer layer of quotes: sh -c 'cat .env'
   const unquoted = raw.replace(/^['"]|['"]$/g, '');
   return unquoted === '' ? null : unquoted;
 }
@@ -578,9 +616,20 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
     // Audit follow-up: a `-c`/eval payload runs through the SAME scanner so
     // an inner `cat .env` is judged exactly like a top-level one. Depth-capped
     // (see MAX_PAYLOAD_DEPTH): deeper nesting fails open rather than recursing
-    // without bound on adversarial input.
+    // without bound on adversarial input. Windows shells recurse too: their
+    // /c, -c and -Command payloads carry the real reader (`type .env`,
+    // `Get-Content .env`), which the wrapper-stripped head alone cannot see.
     if (depth < MAX_PAYLOAD_DEPTH) {
-      const payload = dashCPayload(segment);
+      let payload = dashCPayload(segment);
+      if (payload === null && /^(cmd|cmd\.exe|powershell|powershell\.exe|pwsh)$/i.test(head)) {
+        // Wrapper-stripped form: skip the shell word AND its run-flag, take
+        // the rest as the payload even when quoting defeated the extractor.
+        const m = /\s(?:\/c|-c|-Command)\s+(.*)$/i.exec(segment.trim());
+        if (m !== null) {
+          const rest = m[1]!.trim();
+          payload = rest === '' ? null : rest.replace(/^["']|["']$/g, '');
+        }
+      }
       if (payload !== null) {
         const nested = decideBash(payload, declared, depth + 1);
         if (!nested.allow) {
@@ -609,6 +658,18 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
     // Colon forms (`HEAD:.env`) resolve through the dedicated chunker; fsck
     // is denied only when it would surface unreachable objects (--lost-found
     // / --unreachable), since a bare reachability check reveals no contents.
+    // Audit follow-up (W9 GAP-HOOK-5): /proc/<pid>/environ is the whole
+    // environment as a file — including keys exported by the user's shell
+    // profile, which no manifest tracks. One deny covers every pid form.
+    if (/\/proc\/[^/\s]*\/environ\b/.test(segment)) {
+      return {
+        allow: false,
+        reason:
+          'Blocked: reading `/proc/*/environ` would print the full process environment into the transcript. ' +
+          'Use `env_describe` for declared-key status or `env_verify` to test a key.',
+      };
+    }
+
     if (head === 'git') {
       if (gitPayload === null) {
         gitPayload = segment;

@@ -7,7 +7,7 @@
       "envVar": "OPENAI_API_KEY",
       "description": "API key for OpenAI API access",
       "format": {
-        "pattern": "^sk-[A-Za-z0-9_-]{20,}$",
+        "pattern": "^sk-[A-Za-z0-9_-]{20,256}$",
         "prefix": "sk-",
         "minLength": 20,
         "example": "sk-XXXXXXXXXXXXXXXXXXXX"

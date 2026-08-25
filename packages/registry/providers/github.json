@@ -7,7 +7,7 @@
       "envVar": "GITHUB_TOKEN",
       "description": "Personal access token for GitHub API",
       "format": {
-        "pattern": "^(ghp_|github_pat_)[A-Za-z0-9_]{36,}$",
+        "pattern": "^(ghp_|github_pat_)[A-Za-z0-9_]{36,256}$",
         "prefix": "ghp_",
         "minLength": 36,
         "example": "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

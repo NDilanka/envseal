@@ -7,7 +7,7 @@
       "envVar": "SLACK_BOT_TOKEN",
       "description": "Slack bot API token",
       "format": {
-        "pattern": "^xoxb-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-[A-Za-z0-9_-]{24,}$",
+        "pattern": "^xoxb-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-[A-Za-z0-9_-]{24,256}$",
         "prefix": "xoxb-",
         "minLength": 32,
         "example": "xoxb-XXXX-XXXX-XXXXXXXXXXXXXXXXXXXXXXXX"
@@ -19,7 +19,7 @@
       "envVar": "SLACK_SIGNING_SECRET",
       "description": "Slack signing secret",
       "format": {
-        "pattern": "^[A-Za-z0-9]{32,}$",
+        "pattern": "^[A-Za-z0-9]{32,256}$",
         "minLength": 32,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

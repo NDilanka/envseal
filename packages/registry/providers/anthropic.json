@@ -7,7 +7,7 @@
       "envVar": "ANTHROPIC_API_KEY",
       "description": "API key for Anthropic Claude API access",
       "format": {
-        "pattern": "^sk-ant-[A-Za-z0-9_-]{20,}$",
+        "pattern": "^sk-ant-[A-Za-z0-9_-]{20,256}$",
         "prefix": "sk-ant-",
         "minLength": 20,
         "example": "sk-ant-XXXXXXXXXXXXXXXXXXXXXXXX"

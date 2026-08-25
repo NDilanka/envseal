@@ -7,7 +7,7 @@
       "envVar": "OPENROUTER_API_KEY",
       "description": "OpenRouter API key",
       "format": {
-        "pattern": "^sk-or-[A-Za-z0-9_-]{32,}$",
+        "pattern": "^sk-or-[A-Za-z0-9_-]{32,256}$",
         "prefix": "sk-or-",
         "minLength": 32,
         "example": "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

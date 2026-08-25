@@ -7,7 +7,7 @@
       "envVar": "GROQ_API_KEY",
       "description": "Groq API key",
       "format": {
-        "pattern": "^gsk_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^gsk_[A-Za-z0-9_-]{32,256}$",
         "prefix": "gsk_",
         "minLength": 32,
         "example": "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

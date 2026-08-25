@@ -7,7 +7,7 @@
       "envVar": "NOTION_API_KEY",
       "description": "Notion API key",
       "format": {
-        "pattern": "^ntn_[A-Za-z0-9_-]{64,}$",
+        "pattern": "^ntn_[A-Za-z0-9_-]{64,256}$",
         "prefix": "ntn_",
         "minLength": 64,
         "example": "ntn_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

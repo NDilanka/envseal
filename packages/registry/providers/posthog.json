@@ -7,7 +7,7 @@
       "envVar": "POSTHOG_API_KEY",
       "description": "PostHog API key",
       "format": {
-        "pattern": "^phc_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^phc_[A-Za-z0-9_-]{32,256}$",
         "prefix": "phc_",
         "minLength": 32,
         "example": "phc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

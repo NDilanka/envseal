@@ -9,7 +9,16 @@ export type AuditEvent =
   | { type: 'skipped' | 'cancelled' | 'timeout'; ticket: string; key: string }
   | { type: 'verify'; key: string; result: string }
   | { type: 'revoke'; key: string; sink: string }
-  | { type: 'blocked'; reason: string; detail: string };
+  | { type: 'blocked'; reason: string; detail: string }
+  /**
+   * One env_use execution attempt. Written after consent succeeds,
+   * immediately before spawn — a crash mid-run still leaves the attempt
+   * recorded; denied consent records nothing. The command is persisted only
+   * after passing through the redaction engine.
+   */
+  | { type: 'use'; command: string; keys: string[]; networkEgress: boolean; targetHashes?: Record<string, string> }
+  /** How the attempt ended; paired with the preceding 'use' record. */
+  | { type: 'use_result'; exitCode: number | null; signal: string | null; durationMs: number };
 
 export type AuditRecord = AuditEvent & { at: string; v: number };
 

@@ -6,6 +6,8 @@ import { resolve as resolvePath } from 'node:path';
 import type { SecretValue, ExecResult } from '@envseal/protocol';
 import { SepError } from '@envseal/protocol';
 import { redact } from './redact.js';
+import { appendAudit } from './audit.js';
+import type { ProjectPaths } from './paths.js';
 import { unsafeSecretToUtf8 } from './sinks/dotenv.js';
 
 /**
@@ -63,6 +65,12 @@ export interface ExecOptions {
     target: TargetInfo;
   }) => Promise<boolean>;
   approvedCommands?: string[];
+  /**
+   * When provided, every execution is audited: a 'use' record lands after
+   * consent succeeds and immediately before spawn, and a 'use_result' when
+   * the child exits. Denied or refused consent records nothing.
+   */
+  auditPaths?: ProjectPaths;
 }
 
 const NETWORK_TOOLS = new Set([
@@ -280,6 +288,29 @@ export async function runWithSecrets(
   }
 
   const MAX_BUFFER = 1024 * 1024;
+  const startedAt = Date.now();
+  let exitSignal: string | null = null;
+
+  if (opts?.auditPaths) {
+    // What consent actually bound to: the content hashes of every named
+    // file, so the audit record stays meaningful even if the file is later
+    // rewritten or deleted.
+    const targetHashes: Record<string, string> = {};
+    for (const file of approvedSnapshot.info.hashedFiles) {
+      targetHashes[file.resolvedPath] = file.sha256;
+    }
+    // One filtered exit (PLAN.md principle 4): the persisted command goes
+    // through the same redaction engine as stdout/stderr, so a value the
+    // caller smuggled into argv cannot reach audit.jsonl either.
+    appendAudit(opts.auditPaths, {
+      type: 'use',
+      command: redact(joinedCommand, secretValues, redactionLabels).text,
+      keys: secretKeys,
+      networkEgress,
+      targetHashes,
+    });
+  }
+
   const proc = spawn(command[0]!, command.slice(1), {
     cwd: opts?.cwd,
     env: childEnv,
@@ -328,6 +359,15 @@ export async function runWithSecrets(
       const redactStdout = redact(stdoutStr, secretValues, redactionLabels);
       const redactStderr = redact(stderrStr, secretValues, redactionLabels);
 
+      if (opts?.auditPaths) {
+        appendAudit(opts.auditPaths, {
+          type: 'use_result',
+          exitCode: code,
+          signal: exitSignal,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+
       resolve({
         exitCode,
         stdout: redactStdout.text,
@@ -337,7 +377,8 @@ export async function runWithSecrets(
       });
     };
 
-    proc.on('exit', (code) => {
+    proc.on('exit', (code, signal) => {
+      exitSignal = signal;
       if (!timedOut) {
         finish(code);
       }

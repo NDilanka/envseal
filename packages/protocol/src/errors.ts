@@ -14,6 +14,7 @@ export const SEP_ERROR_CODES = [
   'SEP_CONFIRMATION_DENIED',
   'SEP_RATE_LIMITED',
   'SEP_TARGET_CHANGED',
+  'SEP_EGRESS_DENIED',
 ] as const;
 
 export type SepErrorCode = (typeof SEP_ERROR_CODES)[number];
@@ -85,6 +86,12 @@ export const SEP_ERROR_DEFAULTS: Record<SepErrorCode, SepErrorDefaults> = {
     userMessage:
       'The program to run changed on disk after you approved it. Nothing was executed. ' +
       'Re-run the command to review the current content and approve it again.',
+  },
+  SEP_EGRESS_DENIED: {
+    retriable: false,
+    userMessage:
+      'This project uses an egress allowlist, and the command targets a host that is not on it. ' +
+      'Nothing was executed or sent. To allow the host, add it to policy.egress.allow in env.schema.jsonc.',
   },
 };
 

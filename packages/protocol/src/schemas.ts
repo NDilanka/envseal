@@ -60,11 +60,54 @@ export const ManifestEntry = z
 
 export type ManifestEntry = z.infer<typeof ManifestEntry>;
 
+/**
+ * policy.egress — declarative egress restriction for env_use (SEP/1 minor
+ * addition). mode 'warn' (default when policy is absent) preserves historical
+ * behavior: network-touching commands draw an extra warning in the consent
+ * dialog. mode 'allowlist' hard-refuses any network command whose target host
+ * is not listed, BEFORE any dialog opens. The override path is deliberately
+ * editing this file rather than clicking a dialog: a prompt-injected agent
+ * cannot talk the user past a control that does not exist mid-flow.
+ *
+ * Allow entries are hostnames or single-label wildcards ('*.openai.com').
+ * URLs, ports, and schemes are rejected here so the enforcement layer can
+ * trust entries blindly.
+ */
+export const EgressPolicy = z
+  .object({
+    mode: z.enum(['warn', 'allowlist']),
+    allow: z.array(z.string()).default([]),
+  })
+  .strict()
+  .superRefine((policy, ctx) => {
+    if (policy.mode === 'allowlist' && policy.allow.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['allow'],
+        message: 'mode "allowlist" requires at least one entry in allow',
+      });
+    }
+    const HOST_PATTERN = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+    for (const [i, entry] of policy.allow.entries()) {
+      if (!HOST_PATTERN.test(entry)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['allow', i],
+          message:
+            'allow entries must be hostnames or "*.suffix" wildcards — no URLs, ports, schemes, or paths',
+        });
+      }
+    }
+  });
+
+export type EgressPolicy = z.infer<typeof EgressPolicy>;
+
 export const Manifest = z
   .object({
     $schema: z.string().optional(),
     version: z.literal(1),
     entries: z.array(ManifestEntry).default([]),
+    policy: z.object({ egress: EgressPolicy }).strict().optional(),
   })
   .strict();
 

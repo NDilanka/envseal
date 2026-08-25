@@ -543,6 +543,52 @@ Reference implementations are available at:
 
 ---
 
+## Egress Policy (`policy.egress`)
+
+A manifest MAY declare an egress policy restricting where `env_use` commands
+may reach the network:
+
+```jsonc
+{
+  "version": 1,
+  "entries": [ /* ... */ ],
+  "policy": {
+    "egress": {
+      "mode": "allowlist",
+      "allow": ["api.openai.com", "*.openai.com"]
+    }
+  }
+}
+```
+
+**Modes:**
+
+- `warn` (default when `policy` is absent) — historical behavior. A command
+  that can reach the network draws an explicit warning in the consent dialog;
+  the user's click is the only control.
+- `allowlist` — any network-touching command whose target host is not on the
+  allow list is refused with `SEP_EGRESS_DENIED` **before** any dialog opens.
+  Nothing executes and nothing is sent.
+
+**Allow entries** are hostnames or single-label wildcards (`*.openai.com`).
+URLs, schemes, ports, userinfo, and paths are rejected at parse time so the
+enforcement layer can trust entries blindly. Wildcard matching is anchored:
+`*.openai.com` matches exactly one leading label plus `.openai.com` — never
+`evil.openai.com.attacker.io`. A network tool whose target host cannot be
+determined (bare IPs, encoded hostnames) never matches an allow entry and is
+therefore refused under `allowlist` mode; that refusal is the feature, not a
+limitation.
+
+**Why the override path is editing this file rather than clicking a dialog:**
+a prompt-injected agent talks to humans through dialogs mid-flow, but it
+cannot silently rewrite a reviewed, version-controlled policy file between
+consent prompts. Moving the decision out of the dialog removes the surface it
+can manipulate.
+
+---
+
 ## Version History
 
 **SEP/1** — Initial specification. Stable for implementation.
+**SEP/1.1** — Added `policy.egress` (optional manifest section; minor schema
+addition per the semver policy).

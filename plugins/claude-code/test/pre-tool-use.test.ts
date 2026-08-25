@@ -652,4 +652,42 @@ describe('pre-tool-use hook', () => {
       });
     }
   });
+
+  // Audit follow-up: an input redirection reads a file into the transcript
+  // with NO reader head at all (`wc -c < .env`). The word scan caught bare
+  // `<` and the glued `<file` form; the numbered and open-read-write spellings
+  // resolve to the SAME filename and must hit the same rule:
+  //   exec 3< .env          (spaced fd form)
+  //   done 0< .env          (fd form after a compound statement)
+  //   cat <> .env           (open-read-write)
+  // Arithmetic-ish text (`echo 2<1`) resolves to no denied name and stays
+  // allowed — the scan denies NAMES, not the `<` character.
+  describe('decide - numbered/glued input redirections resolve to their filename', () => {
+    const denials: Array<{ label: string; command: string }> = [
+      { label: 'bare spaced redirect', command: "tr -d '\\0' < .env" },
+      { label: 'spaced fd redirect', command: 'exec 3< .env' },
+      { label: 'fd redirect after a compound statement', command: 'while read l; do echo $l; done 0< .env' },
+      { label: 'glued fd redirect', command: 'grep foo 0<.env' },
+      { label: 'spaced open-read-write redirect', command: 'cat <> .env' },
+      { label: 'glued open-read-write redirect', command: 'wc -c <>.env' },
+    ];
+
+    for (const testCase of denials) {
+      it(`denies ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, testCase.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify|\/env:set/);
+      });
+    }
+
+    it('allows arithmetic-ish text resolving to no denied name', () => {
+      const decision = decide({ tool: 'Bash', command: 'echo 2<1' });
+      expect(decision.allow, `echo 2<1: ${decision.reason ?? ''}`).toBe(true);
+    });
+
+    it('still allows stdout-only redirections', () => {
+      const decision = decide({ tool: 'Bash', command: 'ls 2>/dev/null >out.txt' });
+      expect(decision.allow, `ls 2>/dev/null >out.txt: ${decision.reason ?? ''}`).toBe(true);
+    });
+  });
 });

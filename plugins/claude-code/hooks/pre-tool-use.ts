@@ -608,16 +608,27 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
     // W3-07 + audit follow-up: bash's `$(<file)` shorthand AND any mid-command
     // input redirection (`base64 -w0 < .env`, `wc -c < .env`) read a file into
     // the transcript with no recognized reader command. Scan every whitespace
-    // token for a single-arrow redirect; `<<<` is a here-string (literal body,
-    // not a file read) and is handled by the declared-variable scan below.
+    // token for an input-redirect operator and resolve it to its filename.
+    // Covered spellings, all reading stdin from a FILE:
+    //   `< .env`   `<file`     bare, spaced or glued
+    //   `3< .env`  `0<file`    fd-prefixed
+    //   `<> .env`  `<>.env`    open-read-write
+    // `<<<` is a here-string (literal body, not a file read) and is handled by
+    // the declared-variable scan below; `2>`/`>&` never match because they
+    // carry no `<`.
     const words = segment.split(/\s+/);
+    const INPUT_REDIRECT_RE = /^([0-9]*)(<>|<)(.*)$/;
     for (let i = 0; i < words.length; i += 1) {
       const word = words[i]!;
       let candidate: string | undefined;
-      if (word === '<' && i + 1 < words.length) {
-        candidate = words[i + 1];
-      } else if (/^<[^<]/.test(word)) {
-        candidate = word.slice(1); // glued form: `$(<.env)`, `<.env`
+      const redirect = INPUT_REDIRECT_RE.exec(word);
+      if (redirect !== null) {
+        const rest = redirect[3] ?? '';
+        if (rest !== '') {
+          candidate = rest; // glued form: `$(<.env)`, `<.env`, `3<file`, `<>.env`
+        } else if (i + 1 < words.length) {
+          candidate = words[i + 1]; // spaced form: `< .env`, `exec 3< .env`, `cat <> .env`
+        }
       }
       if (candidate === undefined || candidate === '') {
         continue;

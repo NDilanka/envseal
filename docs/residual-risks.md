@@ -50,7 +50,7 @@ This is the single largest remaining hole in the system, and it is important to 
 **Mitigation:**
 - Minimize the lifetime of secret values in memory (envseal zeroes Buffers immediately after use)
 - Prefer sinks that keep values out of plaintext — `keychain` stores and resolves values, and the four provider sinks (`vault`, `sops`, `onepassword`, `doppler`) keep plaintext out of the project too, each through its own CLI
-- On macOS, keychain writes pass the secret on **stdin** to `security add-generic-password`, not on argv (Linux `secret-tool` and Windows DPAPI already used stdin/pipe transports). This removes the process-listing exposure on Darwin, but has not been verified on every macOS version and `security` build
+- Linux `secret-tool` and Windows DPAPI already pass values on stdin/pipe. On macOS, `security add-generic-password` has no documented non-interactive stdin password path: omitting `-w` stores an **empty** password. Writes therefore pass `-w <secret>` on argv for the lifetime of the spawn. Same-uid `ps` can observe that process list; treat Darwin keychain argv as a residual, not a closed H4 item
 - Minimize the number of operations on the secret value
 - Run envseal as a separate process with limited lifetime per operation
 

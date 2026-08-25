@@ -287,6 +287,7 @@ Tests: revoke without confirm hook fails closed; with hook approving, `sink.remo
 
 - Secret must not appear in `spawn` `args`.
 - Preferred: `security add-generic-password … -w` with password **omitted** and bytes on stdin, if `man security` on Darwin supports it.
+- **Outcome (CI macos-latest):** stdin is ignored; omitting `-w` stores an empty password. Keep `-w <secret>` on argv and document the `ps` residual.
 - If stdin is not accepted non-interactively, use a **0600 temp file** + `-w "$(<file)"` is **forbidden** (still argv). Use `security import` or Apple’s documented `-i` only if it does not echo argv.
 - **Verify on macOS** (`pnpm --filter @envseal/core test` already runs keychain tests; add a unit test that mocks `execCommand` and asserts `args` has no secret string).
 - Windows/Linux paths stay stdin/DPAPI as today.
@@ -381,7 +382,7 @@ Today tests **allow** `Read env.schema.jsonc`. After core refuses secret-shaped 
 Update, do not market:
 
 - `docs/threat-model.md` T2/T3/T4/T7 rows: describe new controls honestly (hook still heuristic; fail-open default unchanged).
-- `docs/residual-risks.md`: fingerprint confirmation oracle; user-wide HTTP token when persisted; argv keychain **removed** if H4 landed.
+- `docs/residual-risks.md`: fingerprint confirmation oracle; user-wide HTTP token when persisted; Darwin keychain **argv residual** (stdin write is not supported by `security(1)`).
 - README: Cursor still advisory (one sentence if missing).
 
 No new features in this wave.
@@ -435,7 +436,7 @@ Merge is ready when:
 - [ ] New tests exist for every H-id in §1.1
 - [ ] No secret sentinel appears in MCP/HTTP/SDK zero-leak outputs
 - [ ] `docs/threat-model.md` matches behaviour
-- [ ] Darwin keychain test asserts argv has no secret (even if Darwin `security` is mocked)
+- [ ] Darwin keychain test documents that `-w <secret>` is required (stdin stores empty)
 
 ---
 

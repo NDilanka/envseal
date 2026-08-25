@@ -20,6 +20,26 @@ import * as http from 'node:http';
  * which keeps env_verify fail-closed against its non-allowlisted host with no
  * network call at all.
  */
+/** os.homedir() uses USERPROFILE on Windows, HOME on Unix — set both. */
+function isolateHomedir(dir: string): () => void {
+  const previousHome = process.env.HOME;
+  const previousProfile = process.env.USERPROFILE;
+  process.env.HOME = dir;
+  process.env.USERPROFILE = dir;
+  return () => {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    if (previousProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousProfile;
+    }
+  };
+}
+
 function hermeticPrompter(): Prompter {
   return {
     id: 'ide',
@@ -477,9 +497,8 @@ describe('HTTP Server Contract', () => {
   it('does not create api-token file when none exists and persist is not requested', async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), 'envseal-home-ephemeral-'));
     const tokenFile = join(isolatedHome, '.envseal', 'api-token');
-    const previousHome = process.env.HOME;
+    const restoreHome = isolateHomedir(isolatedHome);
 
-    process.env.HOME = isolatedHome;
     delete process.env.ENVSEAL_PERSIST_HTTP_TOKEN;
 
     try {
@@ -499,11 +518,7 @@ describe('HTTP Server Contract', () => {
 
       expect(response.status).toBe(200);
     } finally {
-      if (previousHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = previousHome;
-      }
+      restoreHome();
       rmSync(isolatedHome, { recursive: true, force: true });
     }
   });
@@ -513,12 +528,11 @@ describe('HTTP Server Contract', () => {
     const tokenDir = join(isolatedHome, '.envseal');
     const tokenFile = join(tokenDir, 'api-token');
     const existingToken = 'existing-persisted-token-abcdef0123456789';
-    const previousHome = process.env.HOME;
+    const restoreHome = isolateHomedir(isolatedHome);
 
     mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
     writeFileSync(tokenFile, existingToken, { mode: 0o600 });
 
-    process.env.HOME = isolatedHome;
     delete process.env.ENVSEAL_PERSIST_HTTP_TOKEN;
 
     try {
@@ -535,11 +549,7 @@ describe('HTTP Server Contract', () => {
 
       expect(response.status).toBe(200);
     } finally {
-      if (previousHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = previousHome;
-      }
+      restoreHome();
       rmSync(isolatedHome, { recursive: true, force: true });
     }
   });

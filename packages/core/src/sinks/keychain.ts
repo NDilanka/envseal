@@ -61,9 +61,14 @@ function execCommand(
   });
 }
 
-/** Args for `security add-generic-password`; the secret is passed on stdin, never argv. */
-export function buildDarwinWriteArgs(account: string): string[] {
-  return ['add-generic-password', '-U', '-s', 'envseal', '-a', account];
+/**
+ * Args for `security add-generic-password`. `security(1)` has no documented
+ * non-interactive stdin password path: omitting `-w` stores an empty secret
+ * (verified on macos-latest). The password therefore appears on argv for the
+ * lifetime of the spawn — residual-risks.md §2.
+ */
+export function buildDarwinWriteArgs(account: string, secret: string): string[] {
+  return ['add-generic-password', '-U', '-s', 'envseal', '-a', account, '-w', secret];
 }
 
 function exitCodeOf(error: unknown): number | undefined {
@@ -275,7 +280,7 @@ class KeychainSink implements Sink {
     const valueStr = unsafeSecretToUtf8(value);
 
     if (process.platform === 'darwin') {
-      await execCommand('security', buildDarwinWriteArgs(account), valueStr);
+      await execCommand('security', buildDarwinWriteArgs(account, valueStr));
     } else if (process.platform === 'win32') {
       const dir = windowsCredsDir();
       mkdirSync(dir, { recursive: true });

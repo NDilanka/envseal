@@ -28,12 +28,19 @@ function commandAvailable(cmd: string): boolean {
 }
 
 describe('keychain sink round-trip', () => {
-  it('darwin write args never include the secret or -w', () => {
+  it('darwin write uses -w because security(1) has no stdin password path', () => {
     const secret = 'sk-test-never-on-argv-abc123';
-    const args = buildDarwinWriteArgs('myproject:MY_KEY');
-    expect(args).not.toContain('-w');
-    expect(args.join(' ')).not.toContain(secret);
-    expect(args).toEqual(['add-generic-password', '-U', '-s', 'envseal', '-a', 'myproject:MY_KEY']);
+    const args = buildDarwinWriteArgs('myproject:MY_KEY', secret);
+    expect(args).toEqual([
+      'add-generic-password',
+      '-U',
+      '-s',
+      'envseal',
+      '-a',
+      'myproject:MY_KEY',
+      '-w',
+      secret,
+    ]);
   });
 
   // Every test spawns the platform store helper several times (powershell/

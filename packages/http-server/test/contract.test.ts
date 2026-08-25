@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CONFIRM_KEY_REVOKE } from '@envseal/sdk';
 import { startHttpServer } from '../src/server.js';
 import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters';
 import { secretFromUtf8 } from '@envseal/protocol';
@@ -28,7 +29,7 @@ function hermeticPrompter(): Prompter {
       results: req.keys.map((k) => ({
         key: k.key,
         outcome: 'entered' as const,
-        value: secretFromUtf8(k.key === 'APPROVE' ? 'yes' : ''),
+        value: secretFromUtf8(k.key === 'APPROVE' || k.key === CONFIRM_KEY_REVOKE ? 'yes' : ''),
       })),
     }),
     cancel: async () => {
@@ -470,6 +471,76 @@ describe('HTTP Server Contract', () => {
     for (const response of responses) {
       expect(response.body, `secret leaked in ${response.label} body`).not.toContain(sentinel);
       expect(response.rawHeaders, `secret leaked in ${response.label} headers`).not.toContain(sentinel);
+    }
+  });
+
+  it('does not create api-token file when none exists and persist is not requested', async () => {
+    const isolatedHome = mkdtempSync(join(tmpdir(), 'envseal-home-ephemeral-'));
+    const tokenFile = join(isolatedHome, '.envseal', 'api-token');
+    const previousHome = process.env.HOME;
+
+    process.env.HOME = isolatedHome;
+    delete process.env.ENVSEAL_PERSIST_HTTP_TOKEN;
+
+    try {
+      expect(existsSync(tokenFile)).toBe(false);
+
+      const result = await startHttpServer({ root: testRoot });
+      serverCloseFunc = result.close;
+
+      expect(existsSync(tokenFile)).toBe(false);
+      expect(result.token).toMatch(/^[0-9a-f]{64}$/);
+
+      const response = await httpRequest(`${result.url}/v1/env_describe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${result.token}` },
+        body: {},
+      });
+
+      expect(response.status).toBe(200);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      rmSync(isolatedHome, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses an existing api-token file when present', async () => {
+    const isolatedHome = mkdtempSync(join(tmpdir(), 'envseal-home-persist-'));
+    const tokenDir = join(isolatedHome, '.envseal');
+    const tokenFile = join(tokenDir, 'api-token');
+    const existingToken = 'existing-persisted-token-abcdef0123456789';
+    const previousHome = process.env.HOME;
+
+    mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+    writeFileSync(tokenFile, existingToken, { mode: 0o600 });
+
+    process.env.HOME = isolatedHome;
+    delete process.env.ENVSEAL_PERSIST_HTTP_TOKEN;
+
+    try {
+      const result = await startHttpServer({ root: testRoot });
+      serverCloseFunc = result.close;
+
+      expect(result.token).toBe(existingToken);
+
+      const response = await httpRequest(`${result.url}/v1/env_describe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${result.token}` },
+        body: {},
+      });
+
+      expect(response.status).toBe(200);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      rmSync(isolatedHome, { recursive: true, force: true });
     }
   });
 

@@ -195,7 +195,16 @@ export class Broker {
       };
     });
 
-    return declareEntries(this.paths, withDefaults);
+    const result = declareEntries(this.paths, withDefaults);
+
+    // The declaration itself is audited: a model reshaping the manifest is
+    // exactly the activity the log exists to answer for later.
+    appendAudit(this.paths, {
+      type: 'declare',
+      keys: withDefaults.map((entry) => entry.key),
+    });
+
+    return result;
   }
 
   async request(input: EnvRequestInput): Promise<Ticket> {
@@ -447,6 +456,10 @@ export class Broker {
       const result = await verifyKey(this.paths, entry, value, {
         onApprovalNeeded: this.onApprovalNeeded,
       });
+
+      // Probe outcomes are audited: a verify against an attacker-approved
+      // host is a forensic event even when the probe itself leaks nothing.
+      appendAudit(this.paths, { type: 'verify', key: keyName, result: result.result });
 
       results.push(result);
       zero(value);

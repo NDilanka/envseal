@@ -172,5 +172,16 @@ describe('zero-leak over real stdio JSON-RPC', () => {
     expect(all).not.toContain(SENTINEL);
     expect(all).not.toContain('SENTINEL');
     expect(all).not.toContain('DO-NOT-LEAK');
+
+    // W9 GAP-AUDIT extension (plan task 5.2): the flow wrote provisioning
+    // records into the project's chained audit log. The sentinel must be
+    // absent there too — audit records persist command lines and fingerprints,
+    // never values. Read from disk so this checks the artifact, not memory.
+    const { readFileSync: readAuditArtifact, existsSync: auditExists } = await import('node:fs');
+    const auditPath = join(dir, '.envseal', 'audit.jsonl');
+    expect(auditExists(auditPath), 'audit log should exist after provisioning').toBe(true);
+    const auditRaw = readAuditArtifact(auditPath, 'utf8');
+    expect(auditRaw).toContain('"type":"declare"');
+    expect(auditRaw).not.toContain(SENTINEL);
   }, 60_000);
 });

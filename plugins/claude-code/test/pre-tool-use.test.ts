@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   normalizePayload,
   isDeniedSecretPath,
@@ -10,6 +10,10 @@ import {
   grepIsRecursive,
   grepPattern,
   isSecretShapedPattern,
+  internalErrorDecision,
+  analyzeShellNesting,
+  MAX_PAYLOAD_DEPTH,
+  stripEnvInvocationPrefix,
 } from '../hooks/pre-tool-use.js';
 
 describe('pre-tool-use hook', () => {
@@ -318,6 +322,95 @@ describe('pre-tool-use hook', () => {
     it('denies grep -r with secret pattern', () => {
       const decision = decide({ tool: 'Bash', command: 'grep -r "sk-" .' });
       expect(decision.allow).toBe(false);
+    });
+
+    // H1–H3 + S2: env-file read bypasses closed in the security hardening pass.
+    const secretReadBypasses: Array<{ label: string; command: string }> = [
+      { label: 'source .env', command: 'source .env' },
+      { label: 'dot-source .env', command: '. ./.env' },
+      { label: 'source .env.local', command: 'source .env.local' },
+      { label: 'env -i cat .env', command: 'env -i cat .env' },
+      { label: 'env -u PATH cat .env', command: 'env -u PATH cat .env' },
+      { label: 'busybox cat .env', command: 'busybox cat .env' },
+    ];
+
+    for (const bypass of secretReadBypasses) {
+      it(`denies ${bypass.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: bypass.command });
+        expect(decision.allow, bypass.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('denies deeply nested sh -c beyond MAX_PAYLOAD_DEPTH', () => {
+      let command = 'cat .env';
+      for (let i = 0; i < MAX_PAYLOAD_DEPTH + 1; i++) {
+        command = `sh -c ${JSON.stringify(command)}`;
+      }
+      expect(analyzeShellNesting(command, 0).exceeded).toBe(true);
+      const decision = decide({ tool: 'Bash', command });
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toBe('envseal hook: command nesting too deep');
+    });
+
+    it('allows echo hello', () => {
+      const decision = decide({ tool: 'Bash', command: 'echo hello' });
+      expect(decision.allow).toBe(true);
+    });
+  });
+
+  describe('internalErrorDecision (S1)', () => {
+    const prior = process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+
+    afterEach(() => {
+      if (prior === undefined) {
+        delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      } else {
+        process.env.ENVSEAL_HOOK_FAIL_CLOSED = prior;
+      }
+    });
+
+    it('defaults to allow on internal error (fail-open)', () => {
+      delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      const decision = internalErrorDecision(new Error('manifest unreadable'));
+      expect(decision.allow).toBe(true);
+      expect(decision.reason).toContain('envseal hook error:');
+    });
+
+    it('denies when ENVSEAL_HOOK_FAIL_CLOSED=1', () => {
+      process.env.ENVSEAL_HOOK_FAIL_CLOSED = '1';
+      const decision = internalErrorDecision(new Error('manifest unreadable'));
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toContain('envseal hook error:');
+    });
+  });
+
+  describe('env wrapper stripping (H2)', () => {
+    it('unwraps env -i to inner command head', () => {
+      expect(headOf('env -i cat .env')).toBe('cat');
+    });
+
+    it('unwraps env -u PATH to inner command head', () => {
+      expect(headOf('env -u PATH cat .env')).toBe('cat');
+    });
+
+    it('stripEnvInvocationPrefix removes flags before command', () => {
+      expect(stripEnvInvocationPrefix('-i cat .env')).toBe('cat .env');
+      expect(stripEnvInvocationPrefix('-u PATH cat .env')).toBe('cat .env');
+    });
+  });
+
+  describe('shell nesting (S2)', () => {
+    it('MAX_PAYLOAD_DEPTH is 3', () => {
+      expect(MAX_PAYLOAD_DEPTH).toBe(3);
+    });
+
+    it('allows shallow sh -c nesting at the cap', () => {
+      let command = 'cat .env';
+      for (let i = 0; i < MAX_PAYLOAD_DEPTH; i++) {
+        command = `sh -c ${JSON.stringify(command)}`;
+      }
+      expect(analyzeShellNesting(command, 0).exceeded).toBe(false);
     });
   });
 

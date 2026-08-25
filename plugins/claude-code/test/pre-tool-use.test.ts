@@ -690,4 +690,79 @@ describe('pre-tool-use hook', () => {
       expect(decision.allow, `ls 2>/dev/null >out.txt: ${decision.reason ?? ''}`).toBe(true);
     });
   });
+
+  // Audit follow-up (W9 GAP-HOOK-10): wildcard spellings whose stripped core
+  // sits within two edits of a denied basename resolve to it on a real
+  // filesystem. False positives cost one manual approval; false negatives
+  // cost a leak — so the fuzzy rule is deliberately biased to deny.
+  describe('decide - glob names fuzz-matched against denied basenames', () => {
+    const denials = ['.e*v', '.?nv', '.en*', 'credential?.json'];
+    for (const name of denials) {
+      it(`denies cat ${name}`, () => {
+        expect(isDeniedSecretPath(name), `${name} must resolve as denied`).toBe(true);
+      });
+    }
+
+    const allows = ['*.txt', '*.log', 'src/*.ts', 'data*.csv', 'config.*'];
+    for (const name of allows) {
+      it(`allows sort ${name}`, () => {
+        expect(isDeniedSecretPath(name), `${name} must stay allowed`).toBe(false);
+      });
+    }
+  });
+
+  // Audit follow-up (W9 GAP-HOOK-10): off-Linux filesystems resolve names
+  // case-insensitively, so `.ENV` IS `.env` there. Linux keeps byte-exact
+  // matching — `.ENV` really is a different file.
+  describe('decide - case-insensitive secret names on case-insensitive filesystems', () => {
+    if (process.platform === 'linux') {
+      it('(linux runner: byte-exact matching asserted instead)', () => {
+        expect(isDeniedSecretPath('.ENV')).toBe(false);
+        expect(isDeniedSecretPath('.env')).toBe(true);
+      });
+    } else {
+      it('denies upper-case spellings of denied names', () => {
+        expect(isDeniedSecretPath('.ENV')).toBe(true);
+        expect(isDeniedSecretPath('CREDENTIALS.JSON')).toBe(true);
+        expect(isDeniedSecretPath('ID_RSA')).toBe(true);
+      });
+      it('still denies the plain lower-case forms', () => {
+        expect(isDeniedSecretPath('.env')).toBe(true);
+        expect(isDeniedSecretPath('credentials.json')).toBe(true);
+      });
+      it('upper-case example files stay allowed', () => {
+        expect(isDeniedSecretPath('.ENV.EXAMPLE')).toBe(false);
+      });
+    }
+  });
+
+  // Audit follow-up (W9 GAP-HOOK-11): a recursive sweep with a match-all
+  // pattern and no file operand prints every file in the tree, .env included.
+  describe('decide - recursive all-file sweeps', () => {
+    const denials = [
+      { label: "empty pattern sweep", command: "grep -r '' ." },
+      { label: 'dot pattern sweep', command: 'rg -n "." .' },
+      { label: 'caret pattern sweep', command: 'grep -r "^" .' },
+      { label: 'dot-star sweep', command: 'rg ".*" .' },
+    ];
+    for (const testCase of denials) {
+      it(`denies ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, testCase.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|\/env:doctor/);
+      });
+    }
+
+    const allows = [
+      { label: 'targeted recursive search', command: 'grep -r todo src/' },
+      { label: 'rg against a named subtree', command: 'rg foo docs/' },
+      { label: 'specific pattern in cwd tree', command: 'rg "connectToDatabase" .' },
+    ];
+    for (const testCase of allows) {
+      it(`allows ${testCase.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: testCase.command });
+        expect(decision.allow, `${testCase.command}: ${decision.reason ?? ''}`).toBe(true);
+      });
+    }
+  });
 });

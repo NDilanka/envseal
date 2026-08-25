@@ -147,9 +147,40 @@ export const FILE_TOOLS_FOR_TEST: readonly string[] = [
 ];
 const FILE_TOOLS = new Set(FILE_TOOLS_FOR_TEST);
 
+/**
+ * True when `a` can be turned into `b` with at most `max` single-character
+ * edits (insert / delete / substitute). Bounded dynamic program, no library:
+ * this backs the glob-fuzz rule where a false positive costs one manual
+ * approval but a false negative costs a leaked secret.
+ */
+export function withinEditDistance(a: string, b: string, max: number): boolean {
+  if (Math.abs(a.length - b.length) > max) {
+    return false;
+  }
+  // Rolling row of edit distances for a[:i] vs b[:j].
+  let prev: number[] = Array.from({ length: b.length + 1 }, (_v, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur: number[] = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitute = prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1);
+      cur.push(Math.min(prev[j]! + 1, cur[j - 1]! + 1, substitute));
+    }
+    prev = cur;
+  }
+  return (prev[b.length] ?? Number.MAX_SAFE_INTEGER) <= max;
+}
+
+/** The canonical denied basenames the fuzzy glob rule protects. */
+const DENIED_BASENAMES = ['.env', 'credentials.json', 'id_rsa', 'secrets.json', 'secrets.yaml', 'secrets.toml'];
+
 export function isDeniedSecretPath(path: string): boolean {
-  const norm = path.replace(/\\/g, '/');
-  const base = norm.split('/').pop() ?? norm;
+  // Case folding off Linux: Windows and macOS resolve names
+  // case-insensitively, so `Read .ENV` on this platform IS a read of `.env`.
+  // Linux stays byte-exact — there `.ENV` is a different, harmless file.
+  const fold = process.platform === 'linux' ? (s: string) => s : (s: string) => s.toLowerCase();
+  const norm = fold(path.replace(/\\/g, '/'));
+  const baseRaw = norm.split('/').pop() ?? norm;
+  const base = fold(baseRaw);
 
   if (base === '.env.example' || base === '.env.sample' || base === '.env.template') {
     return false;
@@ -170,6 +201,14 @@ export function isDeniedSecretPath(path: string): boolean {
       /^secrets\.[a-z0-9]*$/i.test(globless) ||
       /\.(pem|key)$/i.test(globless)
     ) {
+      return true;
+    }
+    // Fuzzy layer for wildcards the prefix rules miss: `.e*v`, `.?nv`,
+    // `.en*` strip to `.ev`, `.nv`, `.en` — none passes the checks above,
+    // yet each resolves to `.env` on a real filesystem. Within-edit-distance-2
+    // against the canonical basenames closes those spellings. Deliberately
+    // conservative: only short cores near a known denied name fuzz-match.
+    if (globless.length >= 3 && DENIED_BASENAMES.some((n) => withinEditDistance(globless, n, 2))) {
       return true;
     }
   }
@@ -366,7 +405,13 @@ export function echoReferencesSecret(segment: string, declared: Set<string>): st
 }
 
 export function grepIsRecursive(segment: string): boolean {
-  return /\b(?:grep|rg|ripgrep|ag)\b(?:\s+--?[A-Za-z]*[rR][A-Za-z]*\s*)+/.test(segment);
+  // rg/ag/ripgrep are recursive BY DEFAULT — `rg foo .` already walks the
+  // tree, no -R flag needed. grep family only recurses with an explicit
+  // -r/-R flag.
+  if (/\b(?:rg|ripgrep|ag)\b/.test(segment)) {
+    return true;
+  }
+  return /\b(?:grep|egrep|fgrep)\b(?:\s+--?[A-Za-z]*[rR][A-Za-z]*\s*)+/.test(segment);
 }
 
 export function grepPattern(segment: string): string | null {
@@ -386,7 +431,9 @@ export function grepPattern(segment: string): string | null {
       seenFlagWithArg = false;
       continue;
     }
-    return token;
+    // A quoted empty string ('' or "") IS the pattern — the empty pattern is
+    // exactly the match-everything sweep this function exists to surface.
+    return token.replace(/^['"]|['"]$/g, '');
   }
   return null;
 }
@@ -692,6 +739,45 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
           reason:
             'Blocked: recursive `grep` with a secret-shaped pattern could match credential values. ' +
             'Use `/env:doctor` to audit provisioning health instead.',
+        };
+      }
+      // Audit follow-up (W9 GAP-HOOK-11): a recursive sweep whose only path
+      // operand is the current directory (or nothing — rg's default) prints
+      // EVERY file in the tree, .env included, so the "secret-shaped pattern"
+      // gate above never fires. Targeted searches naming a real subtree or
+      // file are untouched.
+      const isRgLike = /\b(?:rg|ripgrep|ag)\b/.test(segment);
+      const rawTokens = segment.trim().split(/\s+/).slice(1);
+      const pathOperands: string[] = [];
+      let skipNext = false;
+      for (const tok of rawTokens) {
+        if (skipNext) {
+          skipNext = false;
+          continue;
+        }
+        if (tok.startsWith('-')) {
+          // Flags taking a separate value (-e pattern, --include glob, …)
+          if (/^(-e|--regexp|--include|--exclude|--exclude-dir|-f|--files-with-matches)$/.test(tok)) skipNext = true;
+          continue;
+        }
+        pathOperands.push(tok);
+      }
+      // First positional is the pattern (already extracted above); the REST
+      // are paths. No paths: rg-like tools sweep cwd by default, grep reads
+      // stdin. Paths of only-dot forms: the tree itself is the target.
+      const paths = pathOperands.slice(1);
+      const sweepsCwd =
+        paths.length === 0 ? isRgLike : paths.every((p) => p === '.' || p === './');
+      if (
+        sweepsCwd &&
+        pattern !== null &&
+        (pattern === '' || pattern === '.' || pattern === '^' || pattern === '.*' || pattern === '.*.')
+      ) {
+        return {
+          allow: false,
+          reason:
+            'Blocked: a recursive sweep with a match-everything pattern over this directory prints every file, ' +
+            'including any secret material. Use `env_describe` for status or `/env:doctor` for an audit.',
         };
       }
     }

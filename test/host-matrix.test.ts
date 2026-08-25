@@ -29,6 +29,7 @@ const HOST_DOCS = join(ROOT, 'docs', 'hosts');
 const HAS_MCP_BIN = existsSync(MCP_BIN);
 const HAS_CLI_BIN = existsSync(CLI_BIN);
 const HAS_CLAUDE_BUNDLED = existsSync(CLAUDE_BUNDLED);
+const HAS_PROTOCOL_DIST = existsSync(join(ROOT, 'packages', 'protocol', 'dist', 'index.js'));
 
 const EXPECTED_TOOLS = [...SEP_TOOL_NAMES];
 
@@ -458,13 +459,22 @@ describe('binding tiers expose the same seven tools', () => {
     }
   });
 
-  it('HTTP OpenAPI documents POST /v1/<tool> for every SEP tool', async () => {
-    const { generateOpenAPI } = await import('../packages/http-server/src/openapi.js');
-    const spec = generateOpenAPI(9) as { paths: Record<string, unknown> };
-    for (const tool of EXPECTED_TOOLS) {
-      expect(spec.paths[`/v1/${tool}`], tool).toBeDefined();
-    }
+  it('HTTP OpenAPI generator walks SEP_TOOL_NAMES into /v1/<tool>', () => {
+    const src = readFileSync(join(ROOT, 'packages', 'http-server', 'src', 'openapi.ts'), 'utf8');
+    expect(src).toMatch(/for \(const toolName of SEP_TOOL_NAMES\)/);
+    expect(src).toContain('paths[`/v1/${toolName}`]');
   });
+
+  it.skipIf(!HAS_PROTOCOL_DIST)(
+    'HTTP OpenAPI documents POST /v1/<tool> for every SEP tool',
+    async () => {
+      const { generateOpenAPI } = await import('../packages/http-server/src/openapi.js');
+      const spec = generateOpenAPI(9) as { paths: Record<string, unknown> };
+      for (const tool of EXPECTED_TOOLS) {
+        expect(spec.paths[`/v1/${tool}`], tool).toBeDefined();
+      }
+    },
+  );
 });
 
 describe.skipIf(!HAS_CLI_BIN)('CLI contract for Aider / OpenHands / shell agents', () => {

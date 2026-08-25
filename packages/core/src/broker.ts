@@ -473,6 +473,12 @@ export class Broker {
 
     const result = await runWithSecrets(input.command, secrets, {
       onConfirm: this.onConfirm,
+      // The project's standing egress rule: allowlist mode refuses
+      // non-allowlisted network targets before any dialog opens.
+      egressPolicy: manifest.policy?.egress,
+      // Execution auditing (use / use_result) is wired here so the product
+      // path records every attempt in the chained audit log.
+      auditPaths: this.paths,
     });
 
     for (const value of secrets.values()) {

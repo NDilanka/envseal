@@ -7,6 +7,7 @@ import type { SecretValue, ExecResult } from '@envseal/protocol';
 import { SepError } from '@envseal/protocol';
 import { redact } from './redact.js';
 import { appendAudit } from './audit.js';
+import { extractEgressHosts, hostIsAllowed } from './egress.js';
 import type { ProjectPaths } from './paths.js';
 import { unsafeSecretToUtf8 } from './sinks/dotenv.js';
 
@@ -71,44 +72,16 @@ export interface ExecOptions {
    * the child exits. Denied or refused consent records nothing.
    */
   auditPaths?: ProjectPaths;
+  /**
+   * Declarative egress restriction from the manifest (policy.egress).
+   * mode 'allowlist' refuses any network-touching command whose extracted
+   * hosts are not all allowed — BEFORE the consent dialog opens. Absent
+   * policy means 'warn': egress only adds a warning flag to the dialog.
+   */
+  egressPolicy?: { mode: 'warn' | 'allowlist'; allow: string[] };
 }
 
-const NETWORK_TOOLS = new Set([
-  'curl',
-  'wget',
-  'nc',
-  'ncat',
-  'netcat',
-  'ssh',
-  'scp',
-  'rsync',
-  'http',
-  'httpie',
-  'telnet',
-  'socat',
-]);
-
-/** Nothing remotely path-shaped is longer than this on any supported OS. */
 const MAX_PATHISH_CHARS = 4096;
-
-function detectNetworkEgress(command: string[]): boolean {
-  if (command.length === 0) {
-    return false;
-  }
-
-  const basename = command[0]!.split(/[\\/]/).pop()?.toLowerCase() ?? '';
-  if (NETWORK_TOOLS.has(basename)) {
-    return true;
-  }
-
-  for (const arg of command) {
-    if (/^https?:\/\//.test(arg)) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * T11 hardening: hash the files the command names, so approval binds to
@@ -236,7 +209,23 @@ export async function runWithSecrets(
     });
   }
 
-  const networkEgress = detectNetworkEgress(command);
+  const egressHosts = extractEgressHosts(command);
+  const networkEgress = egressHosts.length > 0;
+
+  // Allowlist enforcement precedes every dialog: a policy refusal is not a
+  // question for the user to answer, it is the project's standing rule. An
+  // undetermined host ('(unknown)') never matches an allow entry, so bare-IP
+  // and encoded-target exfil is refused here by construction.
+  if (opts?.egressPolicy?.mode === 'allowlist') {
+    const denied = egressHosts.filter((host) => !hostIsAllowed(host, opts.egressPolicy!.allow));
+    if (denied.length > 0) {
+      throw new SepError({
+        code: 'SEP_EGRESS_DENIED',
+        details: { hosts: denied },
+      });
+    }
+  }
+
   const secretKeys = Array.from(secrets.keys());
   const joinedCommand = command.join(' ');
   const isApproved = opts?.approvedCommands?.some((approved) => approved === joinedCommand);

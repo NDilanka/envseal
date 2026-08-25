@@ -47,6 +47,12 @@ export function exitCodeForError(e: unknown): number {
     case 'SEP_CONFIRMATION_DENIED':
       return EXIT.UNSATISFIED;
 
+    case 'SEP_EGRESS_DENIED':
+      // The project's standing policy refused the command before anything
+      // ran. Not retriable by re-running: the policy file must change first,
+      // so this maps to USAGE (configuration), not a transient failure.
+      return EXIT.USAGE;
+
     default: {
       const _exhaustive: never = code;
       return _exhaustive;

@@ -6,7 +6,7 @@ import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
 import { createServer } from './index.js';
 import { parseArgv, resolveProjectRoot, USAGE, VERSION } from './cli-args.js';
-import { createProbeApproval, createUseConfirm } from './confirm.js';
+import { createProbeApproval, createRevokeConfirm, createUseConfirm } from './confirm.js';
 import {
   createRefusingPrompter,
   createStubPrompter,
@@ -70,6 +70,7 @@ async function main(): Promise<void> {
       // cannot ask anyone, and exec.ts turns that absence into "the user
       // denied the confirmation" for a user who was never asked.
       onConfirm: createUseConfirm(surface),
+      onRevokeConfirm: createRevokeConfirm(surface),
       // PLAN.md §6.4: consent before a credential goes to a host the registry
       // does not allowlist. Supplied by no binding before this.
       onApprovalNeeded: createProbeApproval(surface),

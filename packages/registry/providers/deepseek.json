@@ -7,7 +7,7 @@
       "envVar": "DEEPSEEK_API_KEY",
       "description": "DeepSeek API key",
       "format": {
-        "pattern": "^sk-[A-Za-z0-9_-]{32,}$",
+        "pattern": "^sk-[A-Za-z0-9_-]{32,256}$",
         "prefix": "sk-",
         "minLength": 32,
         "example": "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

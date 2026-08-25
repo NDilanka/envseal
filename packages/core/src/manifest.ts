@@ -6,7 +6,7 @@ import { DeclareResult, Manifest, ManifestEntry, SepError } from '@envseal/proto
 import type { Manifest as ManifestType } from '@envseal/protocol';
 import type { ProjectPaths } from './paths.js';
 import { appendAudit } from './audit.js';
-import { scanManifestEntry, secretInDeclarationError } from './guard.js';
+import { scanText, scanManifestEntry, secretInDeclarationError, secretInManifestFileError } from './guard.js';
 
 export function emptyManifest(): ManifestType {
   return { version: 1, entries: [] };
@@ -44,6 +44,16 @@ const MANIFEST_FIELDS = ['$schema', 'version', 'entries'] as const;
 export function loadManifest(paths: ProjectPaths): ManifestType | null {
   const text = readFileIfPresent(paths.manifest);
   if (text === null) return null;
+
+  const rawFinding = scanText('manifest', text, 'strict');
+  if (rawFinding !== null) {
+    appendAudit(paths, {
+      type: 'blocked',
+      reason: 'secret_in_declaration',
+      detail: `${rawFinding.path}: ${rawFinding.label}`,
+    });
+    throw secretInManifestFileError(rawFinding);
+  }
 
   const errors: ParseError[] = [];
   const value: unknown = jsonc.parse(text, errors, {

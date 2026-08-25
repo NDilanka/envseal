@@ -194,7 +194,10 @@ describe('presence', () => {
     });
 
     it('Broker.describe sees the stored credential and revoke clears it', { timeout: 30_000 }, async () => {
-      const broker = new Broker({ root: tmpDir });
+        const broker = new Broker({
+          root: tmpDir,
+          onRevokeConfirm: async () => true,
+        });
       try {
         await broker.declare({
           entries: [{ key: KC_KEY, required: true, description: 'presence test', sink: 'keychain' }],

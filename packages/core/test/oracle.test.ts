@@ -102,7 +102,7 @@ describe('format.pattern is not an oracle over stored values', () => {
   it('leaks no bit through a length-probing pattern either', async () => {
     const shorter = await formatValidFor('^.{10}$');
     const exact = await formatValidFor(`^.{${SECRET.length}}$`);
-    const longer = await formatValidFor('^.{500}$');
+    const longer = await formatValidFor('^.{256}$');
     expect(new Set([shorter, exact, longer]).size, 'length probe distinguished values').toBe(1);
   });
 });

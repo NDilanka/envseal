@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { SepError } from '@envseal/protocol';
+import { inspectDotenvGitSafety, projectPaths } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
@@ -32,13 +32,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
 
     const gitignorePath = join(root, '.gitignore');
     const envPath = join(root, '.env');
-
-    // Check gitignore
-    let gitignoreCovers = false;
-    if (existsSync(gitignorePath)) {
-      const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
-      gitignoreCovers = gitignoreContent.includes('.env');
-    }
+    const gitSafety = inspectDotenvGitSafety(projectPaths(root));
+    const gitignoreCovers = gitSafety.ignored;
+    const hookFailClosed = process.env.ENVSEAL_HOOK_FAIL_CLOSED === '1';
 
     // Check .env permissions
     let envFileOk = false;
@@ -64,9 +60,10 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       },
       envFile: {
         exists: existsSync(envPath),
-        isTracked: false,
+        isTracked: gitSafety.tracked,
         permissionsOk: envFileOk,
       },
+      hookFailClosed,
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
     };
@@ -77,6 +74,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       console.log(`  ${host.reason}`);
       console.log(`  ${host.recommendation}`);
       console.log(`Gitignore covers .env: ${gitignoreCovers ? 'yes' : 'no'}`);
+      console.log(
+        `Hook on internal error: ${hookFailClosed ? 'fail-closed' : 'fail-open (default)'}`,
+      );
       console.log(`Missing required keys: ${status.missingRequired.length}`);
       if (status.missingRequired.length > 0) {
         for (const key of status.missingRequired) {

@@ -129,7 +129,7 @@ async function main(): Promise<void> {
           finish(EXIT.USAGE);
           break;
         }
-        await revoke(root, key, json);
+        await revoke(root, key, json, parsed.flags.yes === true);
         break;
       }
 

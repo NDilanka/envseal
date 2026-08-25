@@ -7,7 +7,7 @@
       "envVar": "DISCORD_BOT_TOKEN",
       "description": "Discord bot token",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,}$",
+        "pattern": "^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,256}$",
         "minLength": 68,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXX.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

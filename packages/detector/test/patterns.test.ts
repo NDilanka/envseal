@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { allPatterns } from '../src/patterns.js';
+import { allPatterns, isBoundedRegistryPattern, isSpecificRegistryPattern } from '../src/patterns.js';
+import { detect } from '../src/index.js';
 
 describe('patterns', () => {
   it('should prevent lastIndex regression across multiple calls', () => {
@@ -190,5 +191,35 @@ describe('patterns', () => {
       }
     }
     expect(matched).toBe(false);
+  });
+
+  it('should detect a 32-char alphanumeric secret inside JSON (H7)', () => {
+    const secret = 'aB3cD5eF7gH9jK1mNpQrStUvWxYz0123';
+    const detections = detect(`{"secret":"${secret}"}`);
+    expect(detections.length).toBeGreaterThan(0);
+    expect(detections.some((d) => d.start <= 11 && d.end >= 11 + secret.length)).toBe(true);
+  });
+
+  it('should detect Discord pattern-only registry key with high confidence (H8)', () => {
+    const token =
+      'XXXXXXXXXXXXXXXXXXXXXXXX.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const detections = detect(token);
+    expect(detections.some((d) => d.confidence === 'high' && d.providerId === 'discord')).toBe(true);
+  });
+
+  it('should detect Auth0 client secret via generic scan in assignment context (H8)', () => {
+    const secret = 'aB3cD5eF7gH9jK1mNpQrStUvWxYz0123456789ab';
+    const detections = detect(`AUTH0_CLIENT_SECRET=${secret}`);
+    expect(detections.length).toBeGreaterThan(0);
+  });
+
+  it('should compile bounded specific registry patterns and reject generic ones', () => {
+    expect(isBoundedRegistryPattern('^[A-Za-z0-9_-]{32,}$')).toBe(true);
+    expect(isSpecificRegistryPattern('^[A-Za-z0-9_-]{32,}$')).toBe(false);
+    expect(isSpecificRegistryPattern('^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,}$')).toBe(
+      true,
+    );
+    expect(isBoundedRegistryPattern('^[A-Za-z0-9]+')).toBe(false);
+    expect(isBoundedRegistryPattern('a'.repeat(256))).toBe(false);
   });
 });

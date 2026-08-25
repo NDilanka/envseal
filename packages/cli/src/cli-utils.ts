@@ -18,6 +18,7 @@ export async function createBroker(
   opts?: {
     onConfirm?: BrokerOpts['onConfirm'];
     onApprovalNeeded?: BrokerOpts['onApprovalNeeded'];
+    onRevokeConfirm?: BrokerOpts['onRevokeConfirm'];
   },
 ): Promise<Broker> {
   let prompter;
@@ -36,6 +37,7 @@ export async function createBroker(
     prompter,
     onConfirm: opts?.onConfirm,
     onApprovalNeeded: opts?.onApprovalNeeded,
+    onRevokeConfirm: opts?.onRevokeConfirm,
   });
   registerDisposable(() => broker.dispose());
   return broker;
@@ -229,10 +231,12 @@ file permissions, missing required keys.
 
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
-  revoke: `Usage: envseal revoke <KEY> [--json] [--project <path>]
+  revoke: `Usage: envseal revoke <KEY> [--yes] [--json] [--project <path>]
 
 Remove a key from its sink and report the provider's rotation URL.
+Asks for confirmation first; --yes (or ENVSEAL_ASSUME_YES=1) pre-approves it.
 
+  --yes             Skip the confirmation prompt.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
   mcp: `Usage: envseal mcp

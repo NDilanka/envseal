@@ -7,7 +7,7 @@
       "envVar": "STRIPE_SECRET_KEY",
       "description": "Stripe secret API key",
       "format": {
-        "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,}$",
+        "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,256}$",
         "prefix": "sk_test_",
         "minLength": 32,
         "example": "sk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
@@ -28,7 +28,7 @@
       "envVar": "STRIPE_PUBLISHABLE_KEY",
       "description": "Stripe publishable API key",
       "format": {
-        "pattern": "^pk_(live|test)_[A-Za-z0-9_-]{24,}$",
+        "pattern": "^pk_(live|test)_[A-Za-z0-9_-]{24,256}$",
         "prefix": "pk_test_",
         "minLength": 32,
         "example": "pk_test_XXXXXXXXXXXXXXXXXXXXXXXX"

@@ -1,6 +1,6 @@
 # Residual Risks
 
-envseal eliminates the primary failure mode — accidental paste-into-chat — and prevents leaks *through the protocol itself*. However, seven risks remain even with the protocol in place. This document states them plainly, without softening.
+envseal eliminates the primary failure mode — accidental paste-into-chat — and prevents leaks *through the protocol itself*. Nine risks remain even with the protocol in place. This document states them plainly, without softening.
 
 ## 1. Model-directed exfiltration via `env_use`
 
@@ -50,6 +50,7 @@ This is the single largest remaining hole in the system, and it is important to 
 **Mitigation:**
 - Minimize the lifetime of secret values in memory (envseal zeroes Buffers immediately after use)
 - Prefer sinks that keep values out of plaintext — `keychain` stores and resolves values, and the four provider sinks (`vault`, `sops`, `onepassword`, `doppler`) keep plaintext out of the project too, each through its own CLI
+- Linux `secret-tool` and Windows DPAPI already pass values on stdin/pipe. On macOS, `security add-generic-password` has no documented non-interactive stdin password path: omitting `-w` stores an **empty** password. Writes therefore pass `-w <secret>` on argv for the lifetime of the spawn. Same-uid `ps` can observe that process list; treat Darwin keychain argv as a residual, not a closed H4 item
 - Minimize the number of operations on the secret value
 - Run envseal as a separate process with limited lifetime per operation
 
@@ -167,6 +168,32 @@ If you do not trust your harness, you should not run it on a machine with valuab
 - Leave `.envseal/` in place, writable, and not a junction
 - If you find `..env.*.tmp` files next to `.env`, delete them and find out why `.envseal/` was not writable
 
+## 8. Describe fingerprint as a confirmation oracle
+
+**The risk:** `env_describe` returns an HMAC fingerprint (`fp_` + 8 hex chars — 32 bits) per stored key, keyed by the project salt in `.envseal/salt`. The `format.pattern` oracle (where the model could reconstruct a value by declaring successive regexes) is closed — `formatValid` is recorded at store time and never re-tested against the live secret. The fingerprint remains a weaker oracle: anyone who can read the salt and enumerate a candidate list can test which candidate matches the displayed `fp_*` hash.
+
+**What the control actually prevents:** Casual guessing. Thirty-two bits is not enough to recover a high-entropy secret from scratch, but it *is* enough to distinguish among a small set of candidates — for example, confirming which of a few pasted variants was actually stored, or resolving ambiguity when the model sees fingerprints change across turns.
+
+**What the control does NOT prevent:** An attacker (or a prompt-injected model acting with file access) who reads `.envseal/salt`, obtains a bounded candidate set, and compares HMAC outputs offline. Fingerprint width is intentionally unchanged because clients may persist `fp_*` values across sessions.
+
+**Mitigation:**
+- Treat `.envseal/salt` as sensitive — the PreToolUse hook denies reads of it on Claude Code (Tier A), but Tier B/C hosts and any local process under your uid can still read it
+- Do not rely on fingerprint secrecy against an agent that can read project files
+- Rotate keys if you suspect the salt or fingerprint outputs leaked to an untrusted party
+
+## 9. Persisted HTTP API token
+
+**The risk:** The `@envseal/http-server` binding authenticates loopback requests with a bearer token. By default each listen generates an **ephemeral** token that is returned with the URL and is not written to disk. If `ENVSEAL_PERSIST_HTTP_TOKEN=1` is set, or if `~/.envseal/api-token` already exists from a prior run, the server reuses or creates a **user-wide** token at that path (mode `0600`).
+
+**What the control actually prevents:** Nothing about persistence itself — this is an opt-in convenience for agents that cannot hold an ephemeral token across restarts.
+
+**What the control does NOT prevent:** Any same-uid process on the machine from reading `~/.envseal/api-token` once it exists and calling the broker's HTTP tools until the token is deleted. That grants declare/request/use/revoke capability (still subject to interactive confirmation for use and revoke, but not to transcript blindness).
+
+**Mitigation:**
+- Prefer ephemeral tokens for one-shot integrations; pass the token from the parent process rather than persisting
+- Delete `~/.envseal/api-token` when you no longer need a standing HTTP binding
+- Run `envseal doctor` — it reports when a user-wide token file is present
+
 ---
 
 ## Summary
@@ -174,7 +201,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 envseal eliminates the biggest risk — credential paste-into-chat leaking through transcripts — and provides strong structural guarantees at the protocol level. The residual risks are real but are either:
 
 - **Inherent to the use case** (letting an agent execute code while protecting secrets is an adversarial game)
-- **Inherent to the platform** (Node string immutability, Linux `/proc`)
+- **Inherent to the platform** (Node string immutability, Linux `/proc`, 32-bit fingerprint confirmation)
 - **Out of scope** (malicious harness, malicious browser extensions)
 
 Use envseal with clear expectations about what it protects. It is a defense in depth tool, not a one-way gate. The best security posture combines:

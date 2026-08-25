@@ -34,7 +34,7 @@ describe('ManifestEntry', () => {
       description: 'Used by src/llm/client.ts.',
       required: true,
       secret: true,
-      format: { pattern: '^sk-[A-Za-z0-9_-]{20,}$', example: 'sk-XXXXXXXXXXXXXXXXXXXX' },
+      format: { pattern: '^sk-[A-Za-z0-9_-]{20,80}$', example: 'sk-XXXXXXXXXXXXXXXXXXXX' },
       provider: {
         id: 'openai',
         name: 'OpenAI',
@@ -106,6 +106,23 @@ describe('ManifestEntry', () => {
     it('still rejects unknown fields on a full entry', () => {
       const entry = { key: 'K', description: 'd', value: 'v', verify: { method: 'GET', url: 'https://api.example.com/x', headerTemplate: {} } };
       expect(ManifestEntry.safeParse(entry).success).toBe(false);
+    });
+  });
+
+  describe('format.pattern validation', () => {
+    it('rejects a 10k-char pattern', () => {
+      const entry = { key: 'K', description: 'd', format: { pattern: 'a'.repeat(10_000) } };
+      expect(ManifestEntry.safeParse(entry).success).toBe(false);
+    });
+
+    it('rejects nested quantifiers like (a+)+$', () => {
+      const entry = { key: 'K', description: 'd', format: { pattern: '(a+)+$' } };
+      expect(ManifestEntry.safeParse(entry).success).toBe(false);
+    });
+
+    it('accepts a bounded provider-style pattern', () => {
+      const entry = { key: 'K', description: 'd', format: { pattern: '^sk-[A-Za-z0-9]{20,80}$' } };
+      expect(ManifestEntry.safeParse(entry).success).toBe(true);
     });
   });
 });

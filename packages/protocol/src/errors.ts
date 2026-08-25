@@ -14,6 +14,8 @@ export const SEP_ERROR_CODES = [
   'SEP_CONFIRMATION_DENIED',
   'SEP_RATE_LIMITED',
   'SEP_TARGET_CHANGED',
+  'SEP_PATTERN_UNSAFE',
+  'SEP_KEYS_MISSING',
 ] as const;
 
 export type SepErrorCode = (typeof SEP_ERROR_CODES)[number];
@@ -85,6 +87,16 @@ export const SEP_ERROR_DEFAULTS: Record<SepErrorCode, SepErrorDefaults> = {
     userMessage:
       'The program to run changed on disk after you approved it. Nothing was executed. ' +
       'Re-run the command to review the current content and approve it again.',
+  },
+  SEP_PATTERN_UNSAFE: {
+    retriable: false,
+    userMessage:
+      'The declared format.pattern is unsafe or too complex. Use a shorter, bounded pattern (for example ^sk-[A-Za-z0-9]{20,80}$).',
+  },
+  SEP_KEYS_MISSING: {
+    retriable: false,
+    userMessage:
+      'One or more requested keys are undeclared or have no stored value. Declare and store them before use.',
   },
 };
 

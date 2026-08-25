@@ -1,4 +1,7 @@
 import { findProjectRoot, loadManifest, projectPaths } from '@envseal/core';
+import { detect } from '@envseal/detector';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { readPayload, writeResult } from './lib.js';
 
 /**
@@ -18,6 +21,8 @@ export interface ToolCall {
 export interface PreToolUseContext {
   /** Declared secret keys from the manifest, uppercased. */
   declaredSecrets?: string[];
+  /** Working directory for resolving relative file paths (hook payload cwd). */
+  cwd?: string;
 }
 
 export interface Decision {
@@ -83,6 +88,26 @@ const FILE_READERS = new Set([
   'rg',
   'bat',
   'nl',
+  // H1: bash builtins that execute a file in the current shell — same leak
+  // class as `cat` when the operand is a secret path.
+  'source',
+  '.',
+]);
+/** S2: nested `sh -c` / `bash -c` payloads beyond this depth are denied. */
+export const MAX_PAYLOAD_DEPTH = 3;
+const SHELL_INVOKERS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
+const WRAPPERS = new Set([
+  'sudo',
+  'command',
+  'exec',
+  'builtin',
+  'nice',
+  'nohup',
+  'xargs',
+  'env',
+  // H3: busybox multiplexes applets — `busybox cat .env` is still a read.
+  'busybox',
+  'busybox.exe',
 ]);
 // W3-07: backticks are command substitution too. Without splitting on them,
 // `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner
@@ -157,6 +182,33 @@ export function isDeniedSecretPath(path: string): boolean {
   return false;
 }
 
+/** H5: manifest reads are allowed, but not when comments hold secret-shaped text. */
+export function isEnvSchemaJsoncPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  const base = norm.split('/').pop() ?? norm;
+  return base === 'env.schema.jsonc';
+}
+
+export const ENV_SCHEMA_SECRET_DENY_REASON =
+  'Blocked: env.schema.jsonc contains secret-shaped text. Remove it from the file (including comments); store values with envseal, not in the manifest.';
+
+function resolveFilePath(path: string, cwd: string): string {
+  return isAbsolute(path) ? path : join(cwd, path);
+}
+
+/** Scan on-disk manifest text; fail-open when the file is missing or unreadable. */
+export function envSchemaJsoncHasHighConfidenceSecret(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+    const text = readFileSync(filePath, 'utf8');
+    return detect(text).some((d) => d.confidence === 'high');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Split a command into pipeline/boolean segments. Returns the head command of
  * each segment so `cd x && cat .env` exposes the same signal as `cat .env`.
@@ -177,6 +229,45 @@ export function stripAssignments(segment: string): string {
   return out;
 }
 
+/** H2: after `env`, skip flags (-i, -u VAR, -C DIR, --…) before the command. */
+export function stripEnvInvocationPrefix(rest: string): string {
+  let out = rest.trim();
+  for (;;) {
+    out = stripAssignments(out);
+    const next = /^([^\s]+)/.exec(out);
+    if (next === null) {
+      return '';
+    }
+    const token = next[1]!.replace(/^["']|["']$/g, '');
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      out = out.slice(next[0].length).trim();
+      continue;
+    }
+    if (token.startsWith('--')) {
+      out = out.slice(next[0].length).trim();
+      if (!token.includes('=') && /^(?:--unset|--chdir|--split-string)$/.test(token)) {
+        const arg = /^([^\s]+)/.exec(out);
+        if (arg !== null) {
+          out = out.slice(arg[0].length).trim();
+        }
+      }
+      continue;
+    }
+    if (/^-[A-Za-z]/.test(token)) {
+      out = out.slice(next[0].length).trim();
+      if (/^-(?:u|C|S)$/.test(token)) {
+        const arg = /^([^\s]+)/.exec(out);
+        if (arg !== null) {
+          out = out.slice(arg[0].length).trim();
+        }
+      }
+      continue;
+    }
+    break;
+  }
+  return out;
+}
+
 export function headOf(segment: string): string {
   const stripped = stripAssignments(segment);
   const first = /^([^\s]+)/.exec(stripped);
@@ -188,15 +279,19 @@ export function headOf(segment: string): string {
   // then resolve any remaining path prefix to its basename so `/bin/cat
   // .env` matches the same way bare `cat .env` does. Wrapper FLAGS (e.g.
   // `sudo -u root`) end the unwrapping; the denylist stays a heuristic layer,
-  // not a shell parser.
-  const WRAPPERS = new Set(['sudo', 'command', 'exec', 'builtin', 'nice', 'nohup', 'xargs', 'env']);
+  // not a shell parser. H2: `env -i cat .env` strips env flags before the
+  // inner command head is resolved.
   for (;;) {
     const bare = head.replace(/^["']|["']$/g, '');
     if (!WRAPPERS.has(bare)) {
       break;
     }
     let rest = stripped.slice(stripped.indexOf(bare) + bare.length).trim();
-    rest = stripAssignments(rest);
+    if (bare === 'env') {
+      rest = stripEnvInvocationPrefix(rest);
+    } else {
+      rest = stripAssignments(rest);
+    }
     const next = /^([^\s]+)/.exec(rest);
     if (next === null) {
       break; // bare wrapper word: leave it for its own checks
@@ -204,6 +299,101 @@ export function headOf(segment: string): string {
     head = next[1]!;
   }
   return head.split('/').pop() ?? head;
+}
+
+/** Read one shell argument (quoted or bare word) from the front of `s`. */
+export function readShellArgument(s: string): { value: string; rest: string } | null {
+  const trimmed = s.trimStart();
+  if (trimmed === '') {
+    return null;
+  }
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'") {
+    let i = 1;
+    let raw = '';
+    while (i < trimmed.length) {
+      if (trimmed[i] === '\\' && quote === '"') {
+        if (i + 1 < trimmed.length) {
+          raw += trimmed[i + 1];
+          i += 2;
+          continue;
+        }
+      }
+      if (trimmed[i] === quote) {
+        return { value: raw, rest: trimmed.slice(i + 1) };
+      }
+      raw += trimmed[i]!;
+      i++;
+    }
+    return { value: raw, rest: '' };
+  }
+  const word = /^(\S+)/.exec(trimmed);
+  if (word === null) {
+    return null;
+  }
+  return { value: word[1]!, rest: trimmed.slice(word[0].length) };
+}
+
+/** Extract the script argument from `sh -c '…'` / `bash -c "…"`. */
+export function extractShellPayload(segment: string): string | null {
+  const stripped = stripAssignments(segment.trim());
+  const first = /^([^\s]+)/.exec(stripped);
+  if (first === null) {
+    return null;
+  }
+  const head = first[1]!.replace(/^["']|["']$/g, '').split('/').pop() ?? '';
+  if (!SHELL_INVOKERS.has(head)) {
+    return null;
+  }
+  let rest = stripped.slice(first[0].length).trim();
+  while (rest !== '') {
+    const flag = /^(-[^\s=]+(?:=[^\s]+)?|--[^\s=]+(?:=[^\s]+)?)\s*/.exec(rest);
+    if (flag === null) {
+      break;
+    }
+    const flagToken = flag[1]!;
+    rest = rest.slice(flag[0].length);
+    if (flagToken === '-c' || flagToken === '--command') {
+      const arg = readShellArgument(rest);
+      return arg?.value ?? null;
+    }
+    if (/^-(?:u|C|S)$/.test(flagToken) || /^(?:--unset|--chdir|--split-string)$/.test(flagToken)) {
+      const arg = readShellArgument(rest);
+      if (arg === null) {
+        return null;
+      }
+      rest = arg.rest;
+    }
+  }
+  return null;
+}
+
+export interface ShellNestingResult {
+  exceeded: boolean;
+  payloads: string[];
+}
+
+/** S2: walk nested shell -c payloads; deny when depth exceeds MAX_PAYLOAD_DEPTH. */
+export function analyzeShellNesting(command: string, depth: number): ShellNestingResult {
+  if (depth > MAX_PAYLOAD_DEPTH) {
+    return { exceeded: true, payloads: [] };
+  }
+
+  const payloads: string[] = [];
+  for (const rawSegment of splitCommand(command)) {
+    const segment = stripAssignments(rawSegment);
+    const payload = extractShellPayload(segment);
+    if (payload === null || payload === '') {
+      continue;
+    }
+    payloads.push(payload);
+    const inner = analyzeShellNesting(payload, depth + 1);
+    if (inner.exceeded) {
+      return { exceeded: true, payloads: [...payloads, ...inner.payloads] };
+    }
+    payloads.push(...inner.payloads);
+  }
+  return { exceeded: false, payloads };
 }
 
 export function isSecretShapedPattern(pattern: string): boolean {
@@ -290,6 +480,13 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
           'Use `env_describe` for status or `env_verify` to test the key.',
       };
     }
+    if (path !== undefined && isEnvSchemaJsoncPath(path)) {
+      const cwd = context?.cwd ?? process.cwd();
+      const resolved = resolveFilePath(path, cwd);
+      if (envSchemaJsoncHasHighConfidenceSecret(resolved)) {
+        return { allow: false, reason: ENV_SCHEMA_SECRET_DENY_REASON };
+      }
+    }
     return { allow: true };
   }
 
@@ -305,6 +502,25 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
 }
 
 export function decideBash(command: string, declared: Set<string>): Decision {
+  const nesting = analyzeShellNesting(command, 0);
+  if (nesting.exceeded) {
+    return {
+      allow: false,
+      reason: 'envseal hook: command nesting too deep',
+    };
+  }
+
+  for (const payload of nesting.payloads) {
+    const inner = decideBashSegments(payload, declared);
+    if (!inner.allow) {
+      return inner;
+    }
+  }
+
+  return decideBashSegments(command, declared);
+}
+
+function decideBashSegments(command: string, declared: Set<string>): Decision {
   const commands = splitCommand(command);
 
   // Whole-command rules.
@@ -500,6 +716,16 @@ export interface PreToolUseHookOutput {
   };
 }
 
+/** S1: fail-open by default; ENVSEAL_HOOK_FAIL_CLOSED=1 inverts on internal error. */
+export function internalErrorDecision(error: unknown): Decision {
+  const message = error instanceof Error ? error.message : String(error);
+  const failClosed = process.env.ENVSEAL_HOOK_FAIL_CLOSED === '1';
+  return {
+    allow: !failClosed,
+    reason: `envseal hook error: ${message}`,
+  };
+}
+
 export function toHookOutput(decision: Decision): PreToolUseHookOutput {
   return {
     hookSpecificOutput: {
@@ -517,7 +743,7 @@ export function run(): Promise<void> {
       const call = normalizePayload(payload);
       const root = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
-      const decision = decide(call, { declaredSecrets });
+      const decision = decide(call, { declaredSecrets, cwd: root });
       return toHookOutput(decision);
     })
     .then((result) => {
@@ -529,13 +755,8 @@ if (process.argv[1] !== undefined) {
   const isMain = /pre-tool-use(?:\.cjs|\.js|\.ts)?$/.test(process.argv[1]);
   if (isMain) {
     run().catch((error: unknown) => {
-      // Fail open: an internal error must not block tool use.
-      writeResult({
-        ...toHookOutput({
-          allow: true,
-          reason: `envseal hook error: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      });
+      // Fail open by default: an internal error must not block tool use.
+      writeResult(toHookOutput(internalErrorDecision(error)));
     });
   }
 }

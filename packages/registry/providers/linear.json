@@ -7,7 +7,7 @@
       "envVar": "LINEAR_API_KEY",
       "description": "Linear API key",
       "format": {
-        "pattern": "^lin_[A-Za-z0-9_-]{40,}$",
+        "pattern": "^lin_[A-Za-z0-9_-]{40,256}$",
         "prefix": "lin_",
         "minLength": 40,
         "example": "lin_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

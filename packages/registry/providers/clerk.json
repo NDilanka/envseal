@@ -7,7 +7,7 @@
       "envVar": "CLERK_SECRET_KEY",
       "description": "Clerk secret key",
       "format": {
-        "pattern": "^sk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^sk_[a-z]+_[A-Za-z0-9_-]{32,256}$",
         "prefix": "sk_",
         "minLength": 32,
         "example": "sk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
@@ -20,7 +20,7 @@
       "envVar": "CLERK_PUBLISHABLE_KEY",
       "description": "Clerk publishable key",
       "format": {
-        "pattern": "^pk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^pk_[a-z]+_[A-Za-z0-9_-]{32,256}$",
         "prefix": "pk_",
         "minLength": 32,
         "example": "pk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

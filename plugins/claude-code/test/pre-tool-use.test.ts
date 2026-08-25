@@ -921,4 +921,35 @@ describe('pre-tool-use hook', () => {
       }
     });
   });
+
+  // Audit follow-up (W9 GAP-HOOK-4): the matcher now routes Grep/Glob into
+  // the hook. A Grep pointed at a secret path is `cat` by another name; a
+  // Glob fuzz-matching a denied basename leaks existence and content.
+  describe('decide - Grep and Glob tool surfaces', () => {
+    it('denies Grep with path resolving to a denied secret path', () => {
+      const decision = decide({ tool: 'Grep', pattern: '.', path: '.env' });
+      expect(decision.allow).toBe(false);
+      expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+    });
+
+    it('allows ordinary Grep in source trees', () => {
+      const decision = decide({ tool: 'Grep', pattern: 'foo', path: 'src/' });
+      expect(decision.allow, JSON.stringify(decision)).toBe(true);
+    });
+
+    it('denies Glob patterns matching or fuzz-matching denied basenames', () => {
+      for (const pattern of ['**/.env*', '.env.*', 'credentials.json', '.e?v*']) {
+        const decision = decide({ tool: 'Glob', pattern });
+        expect(decision.allow, `Glob ${pattern}`).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      }
+    });
+
+    it('allows ordinary Glob patterns', () => {
+      for (const pattern of ['*.ts', '**/*.log', 'src/**/*.json']) {
+        const decision = decide({ tool: 'Glob', pattern });
+        expect(decision.allow, `Glob ${pattern}: ${decision.reason ?? ''}`).toBe(true);
+      }
+    });
+  });
 });

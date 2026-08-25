@@ -519,6 +519,44 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
     return decideBash(call.command, declared);
   }
 
+  // --- Grep / Glob (GAP-HOOK-4) --------------------------------------------
+  // The matcher in hooks.json now routes these here. A Grep pointed AT a
+  // secret path prints that file into the transcript exactly like `cat` —
+  // the file tools above deny it, so grep-by-tool must too. A Glob whose
+  // pattern fuzz-matches a denied name leaks existence (and, with output
+  // rendering, content); same edit-distance-2 rule the Bash glob branch uses.
+  if (call.tool === 'Grep') {
+    if (call.path !== undefined && isDeniedSecretPath(call.path)) {
+      return {
+        allow: false,
+        reason:
+          `Blocked: \`Grep\` on \`${call.path}\` would print its contents into the transcript. ` +
+          'Use `env_describe` for status or `env_verify` to test the key.',
+      };
+    }
+    return { allow: true };
+  }
+  if (call.tool === 'Glob') {
+    const pattern = call.pattern;
+    if (pattern !== undefined) {
+      const basename = pattern.split('/').pop() ?? pattern;
+      const globless = basename.replace(/[*?[\]]/g, '');
+      if (
+        globless.length >= 3 &&
+        (isDeniedSecretPath(globless) ||
+          ['.env', 'credentials.json', 'id_rsa'].some((n) => withinEditDistance(globless, n, 2)))
+      ) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: \`Glob ${pattern}\` would surface a secret file's name and contents. ` +
+            'Use `env_describe` for status or `env_verify` to test the key.',
+        };
+      }
+    }
+    return { allow: true };
+  }
+
   return { allow: true };
 }
 

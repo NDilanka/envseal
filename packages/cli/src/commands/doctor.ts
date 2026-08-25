@@ -7,6 +7,7 @@ import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
 import { createBroker } from '../cli-utils.js';
 import { finish } from '../exit.js';
+import { inspectPrimaryHostWiring, wiringFailsDoctor } from '../host-wiring/inspect.js';
 
 export async function doctor(root: string, json: boolean): Promise<void> {
   try {
@@ -44,6 +45,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
     }
 
     const host = detectHost(root);
+    const inspection = inspectPrimaryHostWiring(root, host.id, { probe: true });
     const output = {
       projectRoot: root,
       manifestPath,
@@ -54,6 +56,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
         reason: host.reason,
         recommendation: host.recommendation,
       },
+      agentWiring: inspection.wiring,
       gitignore: {
         exists: existsSync(gitignorePath),
         covers: gitignoreCovers,
@@ -66,6 +69,16 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       hookFailClosed,
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
+      ...(inspection.mcp === undefined
+        ? {}
+        : {
+            mcp: {
+              wired: inspection.mcp.wired,
+              status: inspection.mcp.status,
+              message: inspection.mcp.message,
+              commandOk: inspection.mcp.commandOk,
+            },
+          }),
     };
 
     if (!json) {
@@ -73,6 +86,13 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       console.log(`Host: ${host.name} (Tier ${host.tier})`);
       console.log(`  ${host.reason}`);
       console.log(`  ${host.recommendation}`);
+      console.log(
+        `Agent wiring: MCP ${inspection.wiring.mcp}, instructions ${inspection.wiring.instructions}`,
+      );
+      if (inspection.notOotb) {
+        console.log('  This host is not OOTB (print-only MCP). Layer 1 AGENTS.md is the working path.');
+      }
+      console.log(`  ${inspection.message}`);
       console.log(`Gitignore covers .env: ${gitignoreCovers ? 'yes' : 'no'}`);
       console.log(
         `Hook on internal error: ${hookFailClosed ? 'fail-closed' : 'fail-open (default)'}`,
@@ -87,8 +107,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       emit(json, '', output);
     }
 
-    // Exit with UNSATISFIED if required keys are missing
-    if (status.missingRequired.length > 0) {
+    if (status.missingRequired.length > 0 || wiringFailsDoctor(inspection)) {
       finish(EXIT.UNSATISFIED);
       return;
     }

@@ -38,9 +38,9 @@ since `status` exits nonzero only when a declared required key is missing.
 
 ## Instruction file
 
-Add `plugins/generic/AGENTS.md` to the project root and point the agent at it.
-For most agents this is the only advisory guardrail available — it is
-**advisory**, not enforced:
+Add `AGENTS.md` via `npx envseal init` (or `init --host generic`) and point the
+agent at it. For most agents this is the only advisory guardrail available — it
+is **advisory**, not enforced:
 
 - never read or copy `.env` / `.env.*` (except `.env.example`);
 - never `printenv`, bare `env`, `export -p`, or `echo $VAR`;

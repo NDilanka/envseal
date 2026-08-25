@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }

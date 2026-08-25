@@ -28,30 +28,54 @@ The one way to proceed headlessly is `envseal run`'s own confirmation bypass: `-
 
 ### `envseal init [--host <name>]`
 
-Initialize `env.schema.jsonc` at the project root.
+Initialize `env.schema.jsonc` at the project root, merge Layer 1 `AGENTS.md`,
+and write project host config for every matching marker (or `--host`).
 
 **Flags:**
-- `--host <name>` — Override host detection. Valid values: `claude-code`, `cursor`, `continue`, `aider`, `windsurf`, `cline`, `zed`, `codex`, `jetbrains`, `goose`, `copilot`, `generic`, `unknown`; anything else is rejected with exit 2. When an override is given, the reported tier is what that host id implies, not evidence about this project — `envseal doctor` reports what is actually detected.
+- `--host <name>` — Write this host's project config (comma-separated ok). Valid values: `claude-code`, `cursor`, `continue`, `aider`, `windsurf`, `cline`, `zed`, `codex`, `jetbrains`, `goose`, `copilot`, `generic`, `unknown`, `openhands`; anything else is rejected with exit 2. `--host` selects files to write; `protectionTier` in the output is evidence-based (`detectHost` after write), not a fake tier from the flag. `envseal doctor` reports detected protection.
 - `--json` — Output as JSON.
 - `--project <path>` — Project root (default: auto-detect).
+
+`init` always merges `plugins/generic/AGENTS.md` into project-root `AGENTS.md`
+(create or append; never clobbers unrelated content). It then writes each
+matching **project** config (`.cursor/mcp.json`, `.mcp.json`, …) using
+`npx -y @envseal/mcp-server` (`npx.cmd` on Windows). It never writes
+`~/.cursor/mcp.json` or other `$HOME` configs. With no project markers and no
+IDE process env, it writes `AGENTS.md` only.
 
 **JSON output:**
 ```json
 {
   "manifestPath": "/path/to/env.schema.jsonc",
-  "host": "claude-code",
-  "protectionTier": "C",
+  "host": "cursor",
+  "protectionTier": "B",
+  "requestedHosts": ["cursor"],
+  "wiredHosts": ["cursor"],
+  "wiringSource": "flag",
   "scanned": 14,
   "added": ["OPENAI_API_KEY"],
   "updated": [],
   "unchanged": [],
   "secretKeys": ["OPENAI_API_KEY"],
   "configKeys": [],
-  "entries": 1
+  "entries": 1,
+  "agentsMd": { "action": "created", "path": "/path/to/AGENTS.md" },
+  "hostWiring": [
+    { "id": "cursor", "action": "created", "path": "/path/to/.cursor/mcp.json" }
+  ],
+  "cursorWiring": {
+    "mcp": "created",
+    "rules": "created",
+    "mcpPath": "/path/to/.cursor/mcp.json",
+    "rulesPath": "/path/to/.cursor/rules/envseal.mdc"
+  }
 }
 ```
 
-`host` is the detected host id (`"unknown"` when nothing matched); `protectionTier` is `"A"`, `"B"`, or `"C"`; `scanned` is the number of files scanned; `added`/`updated`/`unchanged` list the manifest entries by outcome; `secretKeys`/`configKeys` split the declared keys by their `secret` flag; `entries` is the total entry count.
+`host` / `protectionTier` are from detection after write. `wiringSource` is
+`"project"` | `"process"` | `"flag"` | `"none"`. `requestedHosts` is present
+only when `wiringSource` is `"flag"`. `wiredHosts` / `hostWiring` list what
+Layer 2 wrote. On Cursor, `cursorWiring` still reports `{ mcp, rules, mcpPath, rulesPath }` (`created` / `merged` / `unchanged` / `skipped`).
 
 **Exit codes:** Always 0 on success.
 
@@ -262,7 +286,9 @@ envseal run -- npm test
 
 ### `envseal doctor`
 
-Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, gitignore coverage, file permissions, count of missing required keys.
+Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, `hookFailClosed`, count of missing required keys.
+
+Folder presence is not wiring. For the detected **primary** host, doctor checks the project config `init` would have written. An empty `.cursor/mcp.json` `mcpServers` map is unwired (exit 1). Continue and Goose are **not OOTB** (print-only MCP).
 
 With no `env.schema.jsonc` in the project there is nothing to audit: `doctor`
 fails with `SEP_NOT_DECLARED` and exit 2 (same as `ensure`) instead of printing
@@ -275,10 +301,13 @@ an empty bill of health.
 **Human output example:**
 ```
 Project root: /Users/alice/myproject
-Host: Claude Code (Tier A)
-  Found .claude/ directory
-  Tier A host with full protocol + interception hooks. Secrets are maximally protected.
+Host: Cursor (Tier B)
+  Found .cursor/ directory
+  Tier B host with protocol + advisory guardrails only. ...
+Agent wiring: MCP ok, instructions ok
+  Cursor MCP is wired (project .cursor/mcp.json).
 Gitignore covers .env: yes
+Hook on internal error: fail-open (default)
 Missing required keys: 1
   - OPENAI_API_KEY
 ```
@@ -289,11 +318,18 @@ Missing required keys: 1
   "projectRoot": "/Users/alice/myproject",
   "manifestPath": "/Users/alice/myproject/env.schema.jsonc",
   "host": {
-    "id": "claude-code",
-    "name": "Claude Code",
-    "tier": "A",
-    "reason": "Found .claude/ directory",
-    "recommendation": "Tier A host with full protocol + interception hooks. Secrets are maximally protected."
+    "id": "cursor",
+    "name": "Cursor",
+    "tier": "B",
+    "reason": "Found .cursor/ directory",
+    "recommendation": "Tier B host with protocol + advisory guardrails only. ..."
+  },
+  "agentWiring": { "mcp": "ok", "instructions": "ok" },
+  "mcp": {
+    "wired": true,
+    "status": "wired",
+    "message": "Cursor MCP is wired (project .cursor/mcp.json).",
+    "commandOk": null
   },
   "gitignore": {
     "exists": true,
@@ -304,14 +340,20 @@ Missing required keys: 1
     "isTracked": false,
     "permissionsOk": true
   },
+  "hookFailClosed": false,
   "missingRequiredCount": 1,
   "missingRequired": ["OPENAI_API_KEY"]
 }
 ```
 
+`agentWiring.mcp` is `"ok"` | `"missing"` | `"spawn_failed"`. `instructions` is
+`"ok"` | `"missing"`. For MCP-capable hosts the JSON also includes
+`mcp: { wired, status, message, commandOk }`. `message` tells the caller to run
+`envseal init` (or the exact JSON to merge); it never says to copy from `plugins/`.
+
 **Exit codes:**
-- 0 — All checks passed; no missing required keys.
-- 1 — One or more required keys are missing.
+- 0 — All checks passed; no missing required keys; primary-host MCP wired when required; Layer 1 instructions present.
+- 1 — One or more required keys are missing, or the agent is unwired (MCP missing/spawn_failed, missing `AGENTS.md` imperative, or Aider `read:` lists `.env`).
 
 ---
 

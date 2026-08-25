@@ -4,7 +4,7 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory instructions |
-| **Config file** | `.cline/mcp_settings.json` (project) or `~/.cline/mcp_settings.json` (global) |
+| **Config file** | `.cline/mcp_settings.json` (project) |
 
 Cline is **Tier B**: it speaks MCP but has no interception hooks.
 
@@ -15,14 +15,22 @@ for you.]`
 
 ## Install
 
-`.cline/mcp_settings.json`:
+```sh
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host cline
+```
+
+`init` writes project `.cline/mcp_settings.json`. It does not write `~/.cline/`.
+A global `~/.cline/` install on a bare tree is labeled Generic Agent, not Cline.
 
 ```json
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }
@@ -30,8 +38,8 @@ for you.]`
 
 Restart/reload Cline, confirm `envseal-mcp` connects, then run
 `envseal doctor`. The detector recognizes a `.cline/` directory at the project
-root, the global `~/.cline/` config directory, or `CLINE_ROOT`, and reports
-`Host: Cline (Tier B)`.
+root, or `CLINE_ROOT` when there are no project markers. Doctor fails if the
+project file has no `envseal-mcp`.
 
 ## Keychain recommendation (Tier B)
 

@@ -3,51 +3,51 @@
 | | |
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
-| **Protection tier** | **A** — protocol + interception hooks |
-| **Config file** | `.claude-plugin/plugin.json` (the plugin in this repo, `plugins/claude-code`) or `.mcp.json` |
+| **Protection tier** | **B** from `init`; **A** with the plugin |
+| **Config file** | `.mcp.json` (protocol) plus `plugins/claude-code` (hooks) |
 
 Claude Code is the only host with **Tier A**: the plugin in this repo
 (`plugins/claude-code`) adds a `PreToolUse` guard that denies reads of
 `.env`/secret paths and env-dumping shell commands, a `UserPromptSubmit`
 redactor that intercepts pasted keys, a `SessionStart` note and statusline.
-Prefer the plugin.
+Prefer the plugin. `init` does **not** claim Tier A — that is evidence-based.
 
-## Install (Tier A plugin)
+## Install (protocol, Tier B)
 
 ```sh
-envseal init --host claude-code
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host claude-code
 ```
 
-Note that `init` prints `(protection tier C)` for any `--host` override — it
-cannot verify wiring from a flag alone — so trust `envseal doctor`'s
-evidence-based report instead.
-
-or install the plugin from this repo (`plugins/claude-code`, `.claude-plugin/plugin.json`).
-`envseal doctor` reports `Host: Claude Code (Tier A)` only when it can see the
-hooks actually installed: an envseal + hooks entry in the project or home
-`.claude/settings.json` (or `settings.local.json`), or the plugin copied under
-`.claude/plugins/envseal/`. With only `.claude-plugin/plugin.json` present,
-doctor reports `Claude Code (Tier B)`. Inside a Claude Code session
-(`CLAUDECODE` set), Claude Code is detected either way, but Tier A still
-requires the visible hook wiring.
-
-## Config snippet (bare MCP, no hooks)
-
-If you only want the protocol without the plugin, project-scoped `.mcp.json`:
+`init` writes project `.mcp.json` with `npx -y @envseal/mcp-server` and merges
+`AGENTS.md`. That is protocol connected (Tier B). Restart Claude Code.
 
 ```json
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }
 ```
 
-Claude Code reads MCP config from `.mcp.json` at the project root (documented by
-Anthropic); without the plugin you are Tier B, not A.
+## Install (Tier A plugin)
+
+Install the plugin from this repo (`plugins/claude-code`,
+`.claude-plugin/plugin.json`). `envseal doctor` reports `Host: Claude Code
+(Tier A)` only when it can see the hooks actually installed: an envseal + hooks
+entry in the project or home `.claude/settings.json` (or `settings.local.json`),
+or the plugin copied under `.claude/plugins/envseal/`. With only `.mcp.json`
+present, doctor reports `Claude Code (Tier B)` and `agentWiring.mcp` separately
+(`ok` vs `missing`). Inside a Claude Code session (`CLAUDECODE` set), Claude
+Code is detected either way, but Tier A still requires the visible hook wiring.
+
+`--host` is an override of which files to write, not a claim about protection.
+Trust `envseal doctor`.
 
 ## Notes
 

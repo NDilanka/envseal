@@ -100,9 +100,11 @@ Tier 4 makes the claim "works with any agent" true rather than aspirational: an 
 
 envseal offers different levels of protection depending on your host. `envseal doctor` reports which tier you have:
 
-- **Tier A** — Full protocol + interception hooks. Claude Code **with the envseal plugin installed**. Model tool calls and user messages are pre-filtered to prevent accidental exfiltration. **Recommended.** Running under Claude Code without the plugin reports tier B, not A — `doctor` checks for the hook wiring rather than assuming it.
+- **Tier A** — Full protocol + best-effort interception hooks. Claude Code **with the envseal plugin installed**. Model tool calls and user messages are pre-filtered to prevent accidental exfiltration; the hook denies ~20 read/exfiltration command shapes (interpreters, `sh -c`, git history, argv-injected secrets, …) but remains a name-based denylist, not a sandbox — see [docs/verification/W9-comment-redteam.md](docs/verification/W9-comment-redteam.md) for what it does and does not catch. **Recommended.** Running under Claude Code without the plugin reports tier B, not A — `doctor` checks for the hook wiring rather than assuming it.
 - **Tier B** — Protocol + advisory guardrails (rules files, pre-commit hooks, Continue contexts). Leak-through-shell is possible; recommend the `keychain` sink so `.env` holds nothing at all — it stores and resolves values, keeping plaintext out of the project directory.
 - **Tier C** — Protocol only. Same recommendation, stated more plainly.
+
+Broker-side controls are host-independent and work on **every** tier: per-command `env_use` consent with network-target visibility, the optional `policy.egress` allowlist (`SEP_EGRESS_DENIED` refuses off-list hosts before any dialog), execution auditing in the hash-chained `.envseal/audit.jsonl` (`envseal audit --verify`), and probe-host allowlisting for `env_verify`. What varies by tier is only how much the *host* adds on top.
 
 **On Tier B and C, a shell command can still exfiltrate a value.** The broker requires confirmation for every command and adds a network egress warning when the command can reach the network, but a user who clicks through defeats the control. This is not a limitation of the system; it is inherent to any tool that lets an agent execute arbitrary code. envseal's guarantees are structural at the protocol level — the model cannot obtain a value through the protocol itself — but the user remains responsible for what code they approve.
 

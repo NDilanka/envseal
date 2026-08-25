@@ -167,6 +167,26 @@ If you do not trust your harness, you should not run it on a machine with valuab
 - Leave `.envseal/` in place, writable, and not a junction
 - If you find `..env.*.tmp` files next to `.env`, delete them and find out why `.envseal/` was not writable
 
+## 8. The audit log is agent-writable — chaining gives evidence, not immutability
+
+**The risk:** `.envseal/audit.jsonl` records every provisioning event and every `env_use` execution attempt. The same agent whose actions it records can run arbitrary shell — including `rm audit.jsonl`, or edits between appends. A hash chain cannot prevent any of this.
+
+**What envseal does:** every record carries `seq` plus `sha256(previous raw line)`. `envseal audit --verify` detects edits to surviving records (blamed at the edited record), deletions (sequence gap), reordering, and splicing, and reports the first break with exit 7.
+
+**The honest boundary:** tail truncation is *not* detectable client-side — nothing outside the log records how many records should exist, so a deleted tail is indistinguishable from history that never happened. This case has an explicit test asserting verify reports ok, because pretending otherwise would be worse than the gap. An out-of-band sink (streaming the log elsewhere as it grows) is future work.
+
+**Mitigation:** treat `audit --verify` failures as compromise indicators; ship logs off-machine on a schedule you control for high-value keys; remember the log answers "what happened while it was intact", not "nothing was hidden".
+
+## 9. Known hook bypass classes (tier A)
+
+The PreToolUse hook closes ~20 bypass classes as of the W9 round (see `docs/verification/W9-comment-redteam.md` for each with its repro and closing commit). Classes that remain open by design or for a later wave:
+
+- **Non-Bash tool surfaces:** native `Grep`/`Glob` calls and any MCP filesystem server the user registers can read secret paths without touching the Bash matcher. Advisory only today.
+- **Fail-open:** when the hook itself crashes, Claude Code proceeds — a broken hook degrades to tier B silently except for a stderr notice. `envseal doctor` reports whether hook wiring is present; it cannot prove the hook ran on the last call.
+- **Same-uid reachability:** the macOS keychain sink resolves values through CLI tools the agent could also invoke directly; inherent to running everything under one uid (see §3).
+
+A name-based denylist layered over an agent that executes arbitrary code is defense in depth, not a sandbox. The load-bearing guarantee remains structural: no protocol verb returns a value.
+
 ---
 
 ## Summary

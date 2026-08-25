@@ -422,6 +422,45 @@ describe('pre-tool-use hook', () => {
     });
   });
 
+  // Audit follow-up: interpreters execute code STRINGS that open files from
+  // inside the language, so no reader head ever appears —
+  // `python3 -c "print(open('.env').read())"` has head `python3`, which is
+  // not in FILE_READERS. When an interpreter invocation NAMES a denied
+  // secret basename anywhere in its arguments, deny.
+  describe('decide - interpreter invocations naming secret paths', () => {
+    const invocations: Array<{ label: string; command: string }> = [
+      { label: 'python3 -c open(.env)', command: "python3 -c \"print(open('.env').read())\"" },
+      { label: 'node -p readFileSync(.env)', command: "node -p \"require('fs').readFileSync('.env')\"" },
+      { label: 'perl -ne diamond read of .env', command: "perl -ne 'print while <>' .env" },
+      { label: 'ruby -e File.read(.env)', command: 'ruby -e "File.read(\'.env\')"' },
+    ];
+
+    for (const invocation of invocations) {
+      it(`denies ${invocation.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: invocation.command });
+        // Unconditional reason check: a deny without an actionable alternative
+        // is a dead end for the model (see denial-messages suite).
+        expect(decision.allow, invocation.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('allows python3 -c print(1)', () => {
+      const decision = decide({ tool: 'Bash', command: "python3 -c 'print(1)'" });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows node running an ordinary script', () => {
+      const decision = decide({ tool: 'Bash', command: 'node script.js' });
+      expect(decision.allow).toBe(true);
+    });
+
+    it('allows npm test', () => {
+      const decision = decide({ tool: 'Bash', command: 'npm test' });
+      expect(decision.allow).toBe(true);
+    });
+  });
+
   describe('denial messages have alternatives', () => {
     const denialCases = [
       { tool: 'Read' as const, path: '.env' },

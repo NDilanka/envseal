@@ -99,6 +99,12 @@ const SHELL_C_HEADS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'busybox']);
  *  do unbounded work; beyond the cap we fail open (heuristic layer, not a
  *  sandbox). */
 const MAX_PAYLOAD_DEPTH = 3;
+// Audit follow-up: interpreters execute code STRINGS that open files from
+// inside the language (`python3 -c "print(open('.env').read())"`), so no
+// reader head ever reaches the surface — FILE_READERS cannot see them. An
+// interpreter invocation that NAMES a denied secret basename in any argument
+// is treated as a read of that file.
+const INTERPRETER_HEADS = new Set(['python', 'python3', 'node', 'deno', 'bun', 'perl', 'ruby', 'php']);
 /** Tools that name a file to read or mutate. Kept in sync with the PreToolUse
  *  matcher in hooks/hooks.json — a tool listed in one and not the other is a
  *  hole in the guard. plugin-contract.test.ts reads this list to assert that
@@ -166,6 +172,29 @@ export function isDeniedSecretPath(path: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * The first denied secret basename named anywhere in a segment's argument
+ * text, or null. The text is chunked on characters that cannot occur inside
+ * one path token (quotes, brackets, `=`, redirects, …) and every chunk goes
+ * through isDeniedSecretPath ITSELF — so this check shares one name list
+ * with the path-based rules instead of keeping a copy that could drift.
+ */
+export function interpreterNamesSecretPath(segment: string): string | null {
+  const chunks = segment.split(/[\s'"`(){}[\],;=`<>]/);
+  const denied = chunks.find((chunk) => chunk.length > 0 && isDeniedSecretPath(chunk));
+  return denied ?? null;
+}
+
+/** Denial for interpreter reads. Shared by both match sites so the guidance text cannot drift. */
+function interpreterDenial(head: string, named: string): Decision {
+  return {
+    allow: false,
+    reason:
+      `Blocked: \`${head}\` code naming \`${named}\` would read that secret file's contents into the transcript. ` +
+      'Use `env_describe` for status or `env_verify` to test the key.',
+  };
 }
 
 /**
@@ -346,6 +375,10 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
 
 export function decideBash(command: string, declared: Set<string>, depth = 0): Decision {
   const commands = splitCommand(command);
+  // Accumulator for the interpreter rule: once an interpreter head is seen,
+  // later paren-fragments of its quoted payload are re-tested against this
+  // joined text (see the interpreter block inside the loop below).
+  let interpreterPayload: string | null = null;
 
   // Whole-command rules.
   if (/\bexport\s+(?:-\w+\s+)*-p\b/.test(command)) {
@@ -415,6 +448,31 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
         if (!nested.allow) {
           return { allow: false, reason: nested.reason };
         }
+      }
+    }
+
+    // Audit follow-up: an interpreter head plus a denied basename anywhere in
+    // its arguments is a file read from inside the language — deny with the
+    // same guidance the reader rules give. Chunk-level matching keeps
+    // `node dotenv-loader.js` and `python3 scripts/load.py` unaffected.
+    //
+    // Quoted code strings are torn apart by the segment splitter's
+    // parenthesis rule: `python3 -c "print(open('.env').read())"` yields a
+    // fragment whose head is the interpreter and LATER fragments holding the
+    // denied basename with no interpreter head. So the payload accumulates
+    // across consecutive fragments and is re-tested as one string; without
+    // the rejoin only paren-free payloads (perl's diamond read) were caught.
+    if (INTERPRETER_HEADS.has(head)) {
+      interpreterPayload = segment;
+      const named = interpreterNamesSecretPath(segment);
+      if (named !== null) {
+        return interpreterDenial(head, named);
+      }
+    } else if (interpreterPayload !== null) {
+      interpreterPayload += ` ; ${rawSegment}`;
+      const named = interpreterNamesSecretPath(interpreterPayload);
+      if (named !== null) {
+        return interpreterDenial(headOf(interpreterPayload) ?? head, named);
       }
     }
 

@@ -25,6 +25,8 @@ export interface ToolCall {
   tool: string;
   path?: string;
   command?: string;
+  /** Glob's `pattern` argument (GAP-HOOK-4): judged for secret-name matches. */
+  pattern?: string;
 }
 
 export interface PreToolUseContext {
@@ -69,7 +71,8 @@ export function normalizePayload(payload: unknown): ToolCall {
       : typeof p.command === 'string'
         ? p.command
         : undefined;
-  return { tool, path, command };
+  const pattern = typeof input.pattern === 'string' ? input.pattern : undefined;
+  return { tool, path, command, pattern };
 }
 
 const SECRET_VAR_RE = /\$\{?([A-Z][A-Z0-9_]{0,63})\}?/g;

@@ -78,6 +78,12 @@ describe('parseArgs', () => {
       expect(parsed.flags.yes).toBe(true);
       expect(parsed.args).toEqual(['--', 'npm', 'test']);
     });
+
+    it('revoke --yes KEY leaves KEY as the positional', () => {
+      const parsed = parseArgs(['--yes', 'MY_KEY']);
+      expect(parsed.flags.yes).toBe(true);
+      expect(parsed.args).toEqual(['MY_KEY']);
+    });
   });
 
   // The value-taking flags must keep consuming their value wherever it appears,

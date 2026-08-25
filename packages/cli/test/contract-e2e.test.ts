@@ -249,7 +249,7 @@ describe('set: documented exit codes', () => {
     const root = mkdtempSync(join(tmpdir(), 'envseal-contract-fmt-'));
     try {
       writeManifest(root, [
-        { key: 'CONTRACT_KEY', format: { pattern: '^sk-proj-[A-Za-z0-9]{20,}$' } },
+        { key: 'CONTRACT_KEY', format: { pattern: '^sk-proj-[A-Za-z0-9]{20,80}$' } },
       ]);
       const r = runCli(root, ['set', 'CONTRACT_KEY', '--project', root, '--json'], {
         ENVSEAL_TEST_MODE: '1',
@@ -470,26 +470,47 @@ describe('revoke: documented exit codes', () => {
 
   it('exits 0 when the key is removed', () => {
     writeFileSync(join(tempDir, '.env'), 'REVOKE_ME=some-value\n');
-    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--json']);
+    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--yes', '--json']);
     expect(r.exitCode, r.stderr).toBe(0);
     expect(JSON.parse(r.stdout).removed).toBe(true);
     expect(readFileSync(join(tempDir, '.env'), 'utf8')).not.toContain('REVOKE_ME=');
   });
 
   it('exits 1 when the key was declared but nothing was stored', () => {
-    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--json']);
+    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--yes', '--json']);
     expect(r.exitCode, r.stderr).toBe(1);
     expect(JSON.parse(r.stdout).removed).toBe(false);
   });
 
   it('exits 1 when the key is not in the manifest at all', () => {
-    const r = runCli(tempDir, ['revoke', 'NEVER_DECLARED', '--project', tempDir, '--json']);
+    const r = runCli(tempDir, ['revoke', 'NEVER_DECLARED', '--project', tempDir, '--yes', '--json']);
     expect(r.exitCode, r.stderr).toBe(1);
     expect(JSON.parse(r.stdout)).toEqual({
       key: 'NEVER_DECLARED',
       removed: false,
       rotateUrl: null,
     });
+  });
+
+  it('exits 4 with no terminal to confirm on', () => {
+    writeFileSync(join(tempDir, '.env'), 'REVOKE_ME=some-value\n');
+    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--json'], {
+      CI: '1',
+    });
+    expect(r.exitCode, r.stderr).toBe(4);
+    expect(JSON.parse(r.stdout).code).toBe('SEP_NO_INTERACTIVE_SURFACE');
+    expect(r.signal).toBe(null);
+    expect(readFileSync(join(tempDir, '.env'), 'utf8')).toContain('REVOKE_ME=');
+  });
+
+  it('exits 0 with ENVSEAL_ASSUME_YES=1 and no TTY', () => {
+    writeFileSync(join(tempDir, '.env'), 'REVOKE_ME=some-value\n');
+    const r = runCli(tempDir, ['revoke', 'REVOKE_ME', '--project', tempDir, '--json'], {
+      CI: '1',
+      ENVSEAL_ASSUME_YES: '1',
+    });
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout).removed).toBe(true);
   });
 
   it('exits 2 when KEY is missing', () => {
@@ -553,6 +574,32 @@ describe('status and doctor: documented exit codes', () => {
 
     writeFileSync(join(tempDir, '.env'), 'DOCTOR_KEY=value\n');
     expect(runCli(tempDir, ['doctor', '--project', tempDir, '--json']).exitCode).toBe(0);
+  });
+
+  it('doctor gitignore.covers uses ignore semantics, not substring match', () => {
+    writeManifest(tempDir, [{ key: 'GITIGNORE_KEY' }]);
+    writeFileSync(join(tempDir, '.env'), 'GITIGNORE_KEY=value\n');
+    writeFileSync(join(tempDir, '.gitignore'), 'my.env.backup\n');
+
+    const r = runCli(tempDir, ['doctor', '--project', tempDir, '--json']);
+    expect(r.exitCode, r.stderr).toBe(0);
+    const parsed = JSON.parse(r.stdout) as { gitignore: { covers: boolean } };
+    expect(parsed.gitignore.covers).toBe(false);
+  });
+
+  it('doctor reports hookFailClosed from ENVSEAL_HOOK_FAIL_CLOSED', () => {
+    writeManifest(tempDir, [{ key: 'HOOK_KEY' }]);
+    writeFileSync(join(tempDir, '.env'), 'HOOK_KEY=value\n');
+
+    const openDefault = runCli(tempDir, ['doctor', '--project', tempDir, '--json']);
+    expect(openDefault.exitCode, openDefault.stderr).toBe(0);
+    expect(JSON.parse(openDefault.stdout).hookFailClosed).toBe(false);
+
+    const failClosed = runCli(tempDir, ['doctor', '--project', tempDir, '--json'], {
+      ENVSEAL_HOOK_FAIL_CLOSED: '1',
+    });
+    expect(failClosed.exitCode, failClosed.stderr).toBe(0);
+    expect(JSON.parse(failClosed.stdout).hookFailClosed).toBe(true);
   });
 
   it('exits 2 on an unknown command', () => {

@@ -263,7 +263,7 @@ envseal run -- npm test
 
 ### `envseal doctor`
 
-Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, gitignore coverage, file permissions, count of missing required keys.
+Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, gitignore coverage, file permissions, effective egress policy, count of missing required keys.
 
 With no `env.schema.jsonc` in the project there is nothing to audit: `doctor`
 fails with `SEP_NOT_DECLARED` and exit 2 (same as `ensure`) instead of printing
@@ -280,9 +280,13 @@ Host: Claude Code (Tier A)
   Found .claude/ directory
   Tier A host with full protocol + interception hooks. Secrets are maximally protected.
 Gitignore covers .env: yes
+Egress policy: warn (default)
 Missing required keys: 1
   - OPENAI_API_KEY
 ```
+
+`Egress policy:` reads `allowlist (N allowed hosts)` when the manifest sets
+`policy.egress.mode: "allowlist"`, otherwise `warn (default)`.
 
 **JSON output:**
 ```json
@@ -305,6 +309,7 @@ Missing required keys: 1
     "isTracked": false,
     "permissionsOk": true
   },
+  "egressPolicy": { "mode": "warn", "allow": [] },
   "missingRequiredCount": 1,
   "missingRequired": ["OPENAI_API_KEY"]
 }

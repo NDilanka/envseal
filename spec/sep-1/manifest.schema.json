@@ -154,6 +154,38 @@
         "additionalProperties": false
       },
       "default": []
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "egress": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "warn",
+                "allowlist"
+              ]
+            },
+            "allow": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "egress"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

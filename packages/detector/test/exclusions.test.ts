@@ -84,4 +84,28 @@ describe('exclusions', () => {
       expect(reason).toBeNull();
     });
   });
+
+  it('should NOT exclude a 32-char high-entropy JSON value after structural punct (H7)', () => {
+    const secret = 'aB3cD5eF7gH9jK1mNpQrStUvWxYz0123';
+    expect(secret.length).toBe(32);
+    expect(isExcluded(secret, { before: '{"secret":"', after: '"}' })).toBe(false);
+    expect(isExcluded(secret, { before: '{secret:', after: '}' })).toBe(false);
+  });
+
+  it('should still exclude identifier-like tokens adjacent to code structure', () => {
+    expect(isExcluded('defaultProvider', { before: '{', after: ':' })).toBe(true);
+    expect(isExcluded('$secretRef', { before: '{', after: ',' })).toBe(true);
+    expect(
+      isExcluded('calculateExponentialBackoffDelayWithJitter', { before: 'function ', after: '(' }),
+    ).toBe(true);
+  });
+
+  it('should exclude base64 body when data-uri prefix is in context', () => {
+    const body = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    expect(isExcluded(body, { before: 'data:image/png;base64,', after: '' })).toBe(true);
+  });
+
+  it('should exclude credentialless database URLs', () => {
+    expect(isExcluded('mongodb://localhost:27017/testdb', { before: '', after: '' })).toBe(true);
+  });
 });

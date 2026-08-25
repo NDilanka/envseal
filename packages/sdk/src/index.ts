@@ -8,7 +8,7 @@ import {
   isSepError,
 } from '@envseal/protocol';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { annotateVerifyResults, createProbeApproval, createUseConfirm } from './confirm.js';
+import { annotateVerifyResults, createProbeApproval, createRevokeConfirm, createUseConfirm } from './confirm.js';
 
 export interface CreateBrokerOptions {
   root?: string;
@@ -38,6 +38,7 @@ export function createBroker(opts?: CreateBrokerOptions): Broker {
     // reports the absent callback as SEP_CONFIRMATION_DENIED — blaming a user
     // who was never asked. See confirm.ts.
     onConfirm: createUseConfirm(surface),
+    onRevokeConfirm: createRevokeConfirm(surface),
     onApprovalNeeded: createProbeApproval(surface),
   };
   return new Broker(brokerOpts);
@@ -101,7 +102,7 @@ const TOOL_DESCRIPTIONS: Record<(typeof SEP_TOOL_NAMES)[number], string> = {
     'To check whether a key exists instead of running a command, call env_describe.',
 
   env_revoke:
-    'Removes stored credentials. Records in the audit log and emits the provider ' +
+    'Removes stored credentials after user confirmation. Records in the audit log and emits the provider ' +
     'rotation URL so you can help the user invalidate the old key.',
 };
 
@@ -291,9 +292,11 @@ export async function dispatch(
 export { SEP_TOOL_NAMES } from '@envseal/protocol';
 export {
   createUseConfirm,
+  createRevokeConfirm,
   createProbeApproval,
   annotateVerifyResults,
   CONFIRM_KEY_USE,
+  CONFIRM_KEY_REVOKE,
   CONFIRM_KEY_PROBE,
 } from './confirm.js';
 export type { ConfirmSurface } from './confirm.js';

@@ -117,3 +117,19 @@ export function useConfirmationBody(
   lines.push('', 'Type yes to approve, or submit an empty box to deny. Nothing runs unless you approve.');
   return lines.join('\\n');
 }
+
+/**
+ * The full `env_revoke` approval dialog: project and key names only — never
+ * values. Every binding renders exactly this.
+ */
+export function revokeConfirmationBody(keys: string[], projectRoot: string): string {
+  const lines: string[] = [
+    'EnvSeal is about to remove these stored credentials.',
+    '',
+    `  project: ${escapeForDisplay(projectRoot)}`,
+    `  keys:    ${keys.length > 0 ? keys.map(escapeForDisplay).join(', ') : '(none)'}`,
+    '',
+    'Type yes to approve, or submit an empty box to deny. Nothing is removed unless you approve.',
+  ];
+  return lines.join('\\n');
+}

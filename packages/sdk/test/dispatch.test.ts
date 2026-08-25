@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createBroker, dispatch } from '../src/index.js';
 import { Broker } from '@envseal/core';
+import { secretFromUtf8 } from '@envseal/protocol';
 import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters';
+
+const REVOKE_KEY = 'REVOKE_TEST_KEY';
+const REVOKE_SENTINEL = 'sk-REVOKE-SENTINEL-DO-NOT-LEAK-abc123';
+const USE_KEY = 'USE_TEST_KEY';
+const USE_SENTINEL = 'sk-USE-SENTINEL-DO-NOT-LEAK-xyz789';
 
 describe('dispatch', () => {
   let broker: Broker;
@@ -29,6 +35,7 @@ describe('dispatch', () => {
     // `.env` and `.envseal/` into the source tree, and makes results depend on
     // whatever state the repo happens to be in.
     root = mkdtempSync(join(tmpdir(), 'envseal-sdk-dispatch-'));
+    writeFileSync(join(root, '.gitignore'), '.env\n', 'utf8');
     broker = createBroker({
       root,
       prompter: new StubPrompter() as any,
@@ -93,8 +100,18 @@ describe('dispatch', () => {
       }),
       cancel: async () => {},
     };
+    writeFileSync(
+      join(root, 'env.schema.jsonc'),
+      JSON.stringify({
+        version: 1,
+        entries: [{ key: USE_KEY, description: 'use test', required: true, secret: true, sink: 'dotenv' }],
+      }),
+      'utf8',
+    );
+    writeFileSync(join(root, '.env'), `${USE_KEY}=${USE_SENTINEL}\n`, 'utf8');
+
     const result = await dispatch(createBroker({ root, prompter: refusing }), 'env_use', {
-      keys: ['TEST_KEY'],
+      keys: [USE_KEY],
       command: [process.execPath, '-e', 'process.exit(0)'],
     });
 
@@ -104,6 +121,103 @@ describe('dispatch', () => {
     const message = JSON.stringify(result);
     expect(message).not.toContain('The user denied');
     expect(message).toContain('nobody answering');
+    expect(message).not.toContain(USE_SENTINEL);
+  });
+
+  it('reports an unanswered revoke confirmation as SEP_TICKET_EXPIRED, never as a denial', async () => {
+    const refusing: Prompter = {
+      id: 'ide',
+      available: async () => true,
+      prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+        ticket: req.ticket,
+        results: req.keys.map((k) => ({ key: k.key, outcome: 'timeout' as const })),
+      }),
+      cancel: async () => {},
+    };
+    writeFileSync(
+      join(root, 'env.schema.jsonc'),
+      JSON.stringify({
+        version: 1,
+        entries: [{ key: REVOKE_KEY, description: 'revoke test', required: true, secret: true, sink: 'dotenv' }],
+      }),
+      'utf8',
+    );
+    writeFileSync(join(root, '.env'), `${REVOKE_KEY}=${REVOKE_SENTINEL}\n`, 'utf8');
+
+    const result = await dispatch(createBroker({ root, prompter: refusing }), 'env_revoke', {
+      keys: [REVOKE_KEY],
+    });
+
+    expect(result).toMatchObject({
+      error: { code: 'SEP_TICKET_EXPIRED', retriable: true },
+    });
+    const message = JSON.stringify(result);
+    expect(message).not.toContain('The user denied');
+    expect(message).not.toContain(REVOKE_SENTINEL);
+  });
+
+  it('removes the key when the user approves revoke, without returning the value', async () => {
+    const approving: Prompter = {
+      id: 'ide',
+      available: async () => true,
+      prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+        ticket: req.ticket,
+        results: req.keys.map((k) => ({
+          key: k.key,
+          outcome: 'entered' as const,
+          value: secretFromUtf8('yes'),
+        })),
+      }),
+      cancel: async () => {},
+    };
+    writeFileSync(
+      join(root, 'env.schema.jsonc'),
+      JSON.stringify({
+        version: 1,
+        entries: [{ key: REVOKE_KEY, description: 'revoke test', required: true, secret: true, sink: 'dotenv' }],
+      }),
+      'utf8',
+    );
+    writeFileSync(join(root, '.env'), `${REVOKE_KEY}=${REVOKE_SENTINEL}\n`, 'utf8');
+
+    const result = await dispatch(createBroker({ root, prompter: approving }), 'env_revoke', {
+      keys: [REVOKE_KEY],
+    });
+
+    expect(result).toEqual([{ key: REVOKE_KEY, removed: true, rotateUrl: null }]);
+    expect(JSON.stringify(result)).not.toContain(REVOKE_SENTINEL);
+  });
+
+  it('denies revoke without removing the stored key', async () => {
+    const denying: Prompter = {
+      id: 'ide',
+      available: async () => true,
+      prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
+        ticket: req.ticket,
+        results: req.keys.map((k) => ({
+          key: k.key,
+          outcome: 'entered' as const,
+          value: secretFromUtf8('no'),
+        })),
+      }),
+      cancel: async () => {},
+    };
+    writeFileSync(
+      join(root, 'env.schema.jsonc'),
+      JSON.stringify({
+        version: 1,
+        entries: [{ key: REVOKE_KEY, description: 'revoke test', required: true, secret: true, sink: 'dotenv' }],
+      }),
+      'utf8',
+    );
+    writeFileSync(join(root, '.env'), `${REVOKE_KEY}=${REVOKE_SENTINEL}\n`, 'utf8');
+
+    const result = await dispatch(createBroker({ root, prompter: denying }), 'env_revoke', {
+      keys: [REVOKE_KEY],
+    });
+
+    expect(result).toMatchObject({ error: { code: 'SEP_CONFIRMATION_DENIED' } });
+    expect(JSON.stringify(result)).not.toContain(REVOKE_SENTINEL);
   });
 
   it('does not throw on any dispatch call', async () => {

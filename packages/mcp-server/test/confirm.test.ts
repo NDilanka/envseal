@@ -6,7 +6,9 @@ import { secretFromUtf8, isSepError, type ManifestEntry, type VerifyResult } fro
 import type { Prompter, PromptRequest, PromptResponse } from '@envseal/prompters';
 import {
   CONFIRM_KEY_USE,
+  CONFIRM_KEY_REVOKE,
   createProbeApproval,
+  createRevokeConfirm,
   createUseConfirm,
   annotateVerifyResults,
 } from '../src/confirm.js';
@@ -181,6 +183,71 @@ describe('env_use confirmation', () => {
   });
 });
 
+describe('env_revoke confirmation', () => {
+  const KEYS = ['OPENAI_API_KEY', 'STRIPE_KEY'];
+
+  it('approves only on yes', async () => {
+    for (const answer of ['yes', 'y', 'YES', '  yes  ']) {
+      const confirm = createRevokeConfirm(surfaceFor(answering(answer)));
+      expect(await confirm(KEYS), `answer ${JSON.stringify(answer)}`).toBe(true);
+    }
+  });
+
+  it('denies on anything that is not yes', async () => {
+    for (const answer of ['no', 'n', '', 'yeah', 'skip', 'cancel'] as const) {
+      const confirm = createRevokeConfirm(surfaceFor(answering(answer)));
+      expect(await confirm(KEYS), `answer ${JSON.stringify(answer)}`).toBe(false);
+    }
+  });
+
+  it('shows the project and key names only', async () => {
+    const prompter = answering('yes');
+    await createRevokeConfirm(surfaceFor(prompter))(KEYS);
+
+    const req = prompter.requests[0];
+    expect(req, 'the surface was never asked anything').toBeDefined();
+    const shown = `${req?.reason ?? ''}\n${req?.keys.map((k) => `${k.description}\n${k.formatHint ?? ''}`).join('\n') ?? ''}`;
+
+    expect(shown).toContain('OPENAI_API_KEY');
+    expect(shown).toContain('STRIPE_KEY');
+    expect(shown).toContain('/tmp/envseal-fixture');
+    expect(shown).toContain('Type yes to approve');
+    expect(shown).not.toContain('sk-');
+  });
+
+  it('neutralises control characters in key names', async () => {
+    const prompter = answering('yes');
+    const spoof = 'REAL_KEY\n  keys:    (none)';
+    await createRevokeConfirm(surfaceFor(prompter))([spoof]);
+
+    const shown = prompter.requests[0]?.keys[0]?.description ?? '';
+    expect(shown.split('\n')).not.toContain('  keys:    (none)');
+    expect(shown).toContain('<U+000A>');
+    expect(shown).toContain('REAL_KEY');
+  });
+
+  it('reports a timeout as SEP_TICKET_EXPIRED, never as a denial', async () => {
+    const confirm = createRevokeConfirm(surfaceFor(answering('timeout')));
+    await expect(confirm(KEYS)).rejects.toMatchObject({
+      code: 'SEP_TICKET_EXPIRED',
+      retriable: true,
+    });
+  });
+
+  it('fails with SEP_NO_INTERACTIVE_SURFACE, never SEP_CONFIRMATION_DENIED, with no surface', async () => {
+    const confirm = createRevokeConfirm(surfaceFor(answering('yes', 'none')));
+    await expect(confirm(KEYS)).rejects.toMatchObject({
+      code: 'SEP_NO_INTERACTIVE_SURFACE',
+    });
+  });
+
+  it('asks on the key name the bindings and tests agree on', async () => {
+    const prompter = answering('yes');
+    await createRevokeConfirm(surfaceFor(prompter))(KEYS);
+    expect(prompter.requests[0]?.keys.map((k) => k.key)).toEqual([CONFIRM_KEY_REVOKE]);
+  });
+});
+
 const PROBE_ENTRY: ManifestEntry = {
   key: 'OPENAI_API_KEY',
   description: 'fixture',
@@ -218,6 +285,20 @@ describe('env_verify probe approval', () => {
   it('denies when the user says no', async () => {
     const approve = createProbeApproval(surfaceFor(answering('no')));
     await expect(approve(PROBE_ENTRY)).resolves.toBe(false);
+  });
+
+  it('escapes control characters in the probe headline key name', async () => {
+    const prompter = answering('yes');
+    const entry: ManifestEntry = {
+      ...PROBE_ENTRY,
+      key: 'KEY\nFORGED',
+    };
+    await createProbeApproval(surfaceFor(prompter))(entry);
+    const headline = prompter.requests[0]?.reason ?? '';
+    expect(headline).toContain('<U+000A>');
+    expect(headline.split('\n')).toHaveLength(1);
+    expect(headline).toContain('KEY');
+    expect(headline).toContain('FORGED');
   });
 });
 

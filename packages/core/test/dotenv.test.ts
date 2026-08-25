@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import fc from 'fast-check';
-import { parseDotenv, serializeDotenv, readDotenv, setDotenvValue, removeDotenvKey } from '../src/sinks/dotenv.js';
+import { parseDotenv, serializeDotenv, readDotenv, setDotenvValue, removeDotenvKey, inspectDotenvGitSafety } from '../src/sinks/dotenv.js';
 import { projectPaths } from '../src/paths.js';
 import { SepError } from '@envseal/protocol';
 
@@ -186,6 +186,64 @@ describe('dotenv', () => {
       }
       expect(caught, 'setDotenvValue must refuse a git-tracked .env').toBeInstanceOf(SepError);
       expect((caught as SepError).code).toBe('SEP_GITIGNORE_UNSAFE');
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      'tightens a world-readable .env to mode 0o600 after write',
+      () => {
+        const paths = projectPaths(tmpDir);
+        writeFileSync(paths.dotenv, 'KEY=value\n', { mode: 0o644 });
+        chmodSync(paths.dotenv, 0o644);
+
+        setDotenvValue(paths, 'KEY', 'updated', { allowUnsafe: true });
+
+        const mode = statSync(paths.dotenv).mode & 0o777;
+        expect(mode).toBe(0o600);
+      },
+    );
+
+    it('refuses write outside git when root has no .gitignore covering .env', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-nogit-'));
+      try {
+        const paths = projectPaths(bareDir);
+        let caught: unknown;
+        try {
+          setDotenvValue(paths, 'KEY', 'value');
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).toBeInstanceOf(SepError);
+        expect((caught as SepError).code).toBe('SEP_GITIGNORE_UNSAFE');
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
+    });
+
+    it('allows write outside git when .gitignore covers .env', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-gitignore-'));
+      try {
+        writeFileSync(join(bareDir, '.gitignore'), '.env\n');
+        const paths = projectPaths(bareDir);
+        setDotenvValue(paths, 'KEY', 'value');
+        expect(readFileSync(paths.dotenv, 'utf8')).toContain('KEY=value');
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
+    });
+
+    it('inspectDotenvGitSafety reports non-git dirs without throwing', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-inspect-'));
+      try {
+        writeFileSync(join(bareDir, '.gitignore'), '.env\n');
+        const paths = projectPaths(bareDir);
+        expect(inspectDotenvGitSafety(paths)).toEqual({
+          insideGit: false,
+          tracked: false,
+          ignored: true,
+        });
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
     });
   });
 

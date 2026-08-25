@@ -192,6 +192,16 @@ export function scanManifestEntry(entry: ManifestEntry, basePath: string): Secre
   return findings.find((finding): finding is SecretFinding => finding !== null) ?? null;
 }
 
+export function secretInManifestFileError(finding: SecretFinding): SepError {
+  return new SepError({
+    code: 'SEP_VALUE_IN_REQUEST',
+    userMessage:
+      `Refusing to load manifest: ${finding.path} contains secret-shaped text (${finding.label}). ` +
+      'Remove any credential from comments or other non-schema text before continuing.',
+    details: { field: finding.path, detected: finding.label, confidence: finding.confidence },
+  });
+}
+
 export function secretInDeclarationError(finding: SecretFinding): SepError {
   return new SepError({
     code: 'SEP_VALUE_IN_REQUEST',

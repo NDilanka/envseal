@@ -61,6 +61,11 @@ function execCommand(
   });
 }
 
+/** Args for `security add-generic-password`; the secret is passed on stdin, never argv. */
+export function buildDarwinWriteArgs(account: string): string[] {
+  return ['add-generic-password', '-U', '-s', 'envseal', '-a', account];
+}
+
 function exitCodeOf(error: unknown): number | undefined {
   return (error as { exitCode?: number } | null)?.exitCode;
 }
@@ -270,16 +275,7 @@ class KeychainSink implements Sink {
     const valueStr = unsafeSecretToUtf8(value);
 
     if (process.platform === 'darwin') {
-      await execCommand('security', [
-        'add-generic-password',
-        '-U',
-        '-s',
-        'envseal',
-        '-a',
-        account,
-        '-w',
-        valueStr,
-      ]);
+      await execCommand('security', buildDarwinWriteArgs(account), valueStr);
     } else if (process.platform === 'win32') {
       const dir = windowsCredsDir();
       mkdirSync(dir, { recursive: true });

@@ -262,6 +262,9 @@ function atomicWrite(paths: ProjectPaths, target: string, content: string): void
 function renameOverwrite(tmp: string, target: string): void {
   try {
     withTransientRetry(() => renameSync(tmp, target));
+    if (isPosix) {
+      chmodSync(target, 0o600);
+    }
   } catch (error) {
     try {
       unlinkSync(tmp);
@@ -302,16 +305,68 @@ function runGit(cwd: string, args: string[]): number {
   }
 }
 
-function assertGitSafe(paths: ProjectPaths, allowUnsafe: boolean | undefined): void {
-  if (allowUnsafe) return;
-  if (runGit(paths.root, ['rev-parse', '--is-inside-work-tree']) !== 0) return;
+function readGitignoreLines(root: string): string[] {
+  try {
+    return readFileSync(join(root, '.gitignore'), 'utf8').split(/\r\n|\n|\r/);
+  } catch {
+    return [];
+  }
+}
+
+/** Whether a single .gitignore line would ignore the project `.env` file. */
+function gitignoreLineCoversDotenv(line: string): boolean {
+  let trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) {
+    return false;
+  }
+  trimmed = trimmed.replace(/\/+$/, '');
+  if (trimmed === '.env' || trimmed === '.env*' || trimmed.startsWith('.env*')) {
+    return true;
+  }
+  if (trimmed === '**/.env' || trimmed.endsWith('/.env')) {
+    return true;
+  }
+  if (trimmed === '**/.env*' || trimmed.endsWith('/.env*')) {
+    return true;
+  }
+  return /(^|\/)\.env(\*|$)/.test(trimmed);
+}
+
+function dotenvCoveredByGitignore(root: string): boolean {
+  return readGitignoreLines(root).some(gitignoreLineCoversDotenv);
+}
+
+export interface DotenvGitSafety {
+  insideGit: boolean;
+  tracked: boolean;
+  ignored: boolean;
+}
+
+export function inspectDotenvGitSafety(paths: ProjectPaths): DotenvGitSafety {
+  const insideGit = runGit(paths.root, ['rev-parse', '--is-inside-work-tree']) === 0;
+  if (!insideGit) {
+    return {
+      insideGit: false,
+      tracked: false,
+      ignored: dotenvCoveredByGitignore(paths.root),
+    };
+  }
   const relPath = relative(paths.root, paths.dotenv);
   const tracked = runGit(paths.root, ['ls-files', '--error-unmatch', '--', relPath]) === 0;
-  if (tracked) {
-    throw new SepError({ code: 'SEP_GITIGNORE_UNSAFE' });
-  }
   const ignored = runGit(paths.root, ['check-ignore', '-q', relPath]) === 0;
-  if (!ignored) {
+  return { insideGit, tracked, ignored };
+}
+
+function assertGitSafe(paths: ProjectPaths, allowUnsafe: boolean | undefined): void {
+  if (allowUnsafe) return;
+  const status = inspectDotenvGitSafety(paths);
+  if (status.insideGit) {
+    if (status.tracked || !status.ignored) {
+      throw new SepError({ code: 'SEP_GITIGNORE_UNSAFE' });
+    }
+    return;
+  }
+  if (!status.ignored) {
     throw new SepError({ code: 'SEP_GITIGNORE_UNSAFE' });
   }
 }

@@ -42,6 +42,28 @@ describe('manifest', () => {
       expect(loaded?.entries).toHaveLength(1);
       expect(loaded?.entries?.[0]?.key).toBe('TEST_KEY');
     });
+
+    it('refuses manifest files whose raw text contains secret-shaped comments', () => {
+      const paths = projectPaths(tmpDir);
+      const sentinel = 'sk-proj-FAKE7Qm2Xp9Lz4Rv8Nc3Bd6Hk1Ws5Yt0Ju7Gi2Ae4Of6Pl9Zx3Cn8Mb';
+      writeFileSync(
+        paths.manifest,
+        `// ${sentinel}\n{\n  "version": 1,\n  "entries": []\n}\n`,
+        'utf8',
+      );
+
+      let caught: unknown;
+      try {
+        loadManifest(paths);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(SepError);
+      const err = caught as SepError;
+      expect(err.code).toBe('SEP_VALUE_IN_REQUEST');
+      expect(err.userMessage).not.toContain(sentinel);
+      expect(JSON.stringify(err.details)).not.toContain(sentinel);
+    });
   });
 
   describe('saveManifest', () => {

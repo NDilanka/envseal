@@ -40,7 +40,11 @@ describe('registry defaults', () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'envseal-regdefaults-'));
     writeFileSync(join(root, '.gitignore'), '.env\n', 'utf8');
-    broker = new Broker({ root, prompter: noopPrompter });
+    broker = new Broker({
+      root,
+      prompter: noopPrompter,
+      onRevokeConfirm: async () => true,
+    });
   });
 
   afterEach(() => {

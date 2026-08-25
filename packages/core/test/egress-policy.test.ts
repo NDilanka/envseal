@@ -61,7 +61,8 @@ describe('hostIsAllowed (anchored wildcard matching)', () => {
 
   it('unknown host is never allowed — that refusal is the feature', () => {
     expect(hostIsAllowed(UNKNOWN_HOST, allow)).toBe(false);
-    expect(hostIsAllowed(UNKNOWN_HOST, ['*'] === [] ? [] : ['(unknown)'])).toBe(false);
+    // Even a list that literally spells the sentinel must not match it.
+    expect(hostIsAllowed(UNKNOWN_HOST, ['(unknown)'])).toBe(false);
   });
 });
 

@@ -6,6 +6,7 @@
  * confirmation. One copy here feeds all three: cli, sdk and mcp-server all
  * already depend on @envseal/core, so this adds no dependency edge.
  */
+import { UNKNOWN_HOST } from './egress.js';
 
 /** Per-argument display cap; longer arguments are shown truncated, and said to be. */
 const MAX_ARG_CHARS = 300;
@@ -48,14 +49,23 @@ export function displayArg(arg: string): string {
 /**
  * The full `env_use` approval dialog: project, keys, argv one-per-line,
  * content fingerprints of every named file (see exec.ts target hashing),
- * the egress warning or the honest heuristics disclaimer, and the answer
- * format. Every binding renders exactly this.
+ * the egress warning plus the extracted network targets, or the honest
+ * heuristics disclaimer, and the answer format. Every binding renders
+ * exactly this.
  */
 export function useConfirmationBody(
   info: {
     command: string[];
     keys: string[];
     networkEgress: boolean;
+    /**
+     * Where the command could reach the network, as extracted by
+     * extractEgressHosts (exec.ts computes it either way — this only decides
+     * whether the dialog names the destinations). Optional so older callers
+     * keep rendering; when present alongside networkEgress the user sees
+     * WHERE data could go, not merely THAT it could leave.
+     */
+    egressHosts?: string[];
     target?: import('./exec.js').TargetInfo;
   },
   projectRoot: string,
@@ -105,6 +115,17 @@ export function useConfirmationBody(
       '  WARNING: this command can reach the network, so it could send these',
       '           values somewhere. Only continue if you trust it.',
     );
+    if (info.egressHosts !== undefined && info.egressHosts.length > 0) {
+      // Name the destinations, not just the capability. A host that could
+      // not be determined (bare IP, encoded target — UNKNOWN_HOST from
+      // core/egress.ts) is said so plainly rather than silently dropped:
+      // an undeterminable destination is exactly what exfiltration looks
+      // like, and the dialog must not read as more specific than it is.
+      const shown = info.egressHosts.includes(UNKNOWN_HOST)
+        ? 'undetermined (bare IP or encoded)'
+        : info.egressHosts.map(escapeForDisplay).join(', ');
+      lines.push(`  Network targets: ${shown}`);
+    }
   } else {
     // Honest about what the check is worth: NETWORK_TOOLS plus a URL scan is a
     // heuristic, and claiming more would be the kind of overstatement this

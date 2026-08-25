@@ -2,6 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { SepError } from '@envseal/protocol';
+import { loadManifest, projectPaths } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
@@ -27,6 +28,8 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       return;
     }
 
+    const manifest = loadManifest(projectPaths(root));
+
     const broker = await createBroker(root);
     const status = await broker.describe();
 
@@ -48,6 +51,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
     }
 
     const host = detectHost(root);
+    const egress = manifest?.policy?.egress;
     const output = {
       projectRoot: root,
       manifestPath,
@@ -67,6 +71,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
         isTracked: false,
         permissionsOk: envFileOk,
       },
+      egressPolicy: egress ?? { mode: 'warn', allow: [] },
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
     };
@@ -77,6 +82,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       console.log(`  ${host.reason}`);
       console.log(`  ${host.recommendation}`);
       console.log(`Gitignore covers .env: ${gitignoreCovers ? 'yes' : 'no'}`);
+      console.log(
+        `Egress policy: ${egress?.mode === 'allowlist' ? `allowlist (${egress.allow.length} allowed host${egress.allow.length === 1 ? '' : 's'})` : 'warn (default)'}`,
+      );
       console.log(`Missing required keys: ${status.missingRequired.length}`);
       if (status.missingRequired.length > 0) {
         for (const key of status.missingRequired) {

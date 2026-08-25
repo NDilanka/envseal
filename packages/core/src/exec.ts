@@ -63,6 +63,8 @@ export interface ExecOptions {
     command: string[];
     keys: string[];
     networkEgress: boolean;
+    /** Extracted network destinations; present whenever networkEgress is true. */
+    egressHosts: string[];
     target: TargetInfo;
   }) => Promise<boolean>;
   approvedCommands?: string[];
@@ -244,6 +246,7 @@ export async function runWithSecrets(
       command,
       keys: secretKeys,
       networkEgress,
+      egressHosts,
       target: approvedSnapshot.info,
     });
 

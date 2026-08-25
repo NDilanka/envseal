@@ -73,35 +73,93 @@ function isUUID(candidate: string): boolean {
   return uuidPattern.test(candidate);
 }
 
+/**
+ * Audit fix: these buckets previously excluded on PREFIX alone (`sha256:` +
+ * anything), letting attacker-controlled context park a real credential
+ * behind an algorithm label or an unvalidated `integrity=` shape. Each now
+ * demands a base64/hex body of plausible digest length for its algorithm.
+ */
+const DIGEST_BODY_FLOOR: Record<string, number> = {
+  'sha256:': 43,
+  'sha256-': 43,
+  'sha512-': 86,
+  'sha1-': 27,
+  'md5-': 22,
+};
+
 function isDigest(candidate: string, context: ExclusionContext): boolean {
-  if (candidate.startsWith('sha256:') || candidate.startsWith('sha256-') ||
-      candidate.startsWith('sha512-') || candidate.startsWith('sha1-') ||
-      candidate.startsWith('md5-')) {
-    return true;
+  // Standard-base64/hex charset only: SRI and docker-style digest bodies
+  // never contain `-` or `_`, but vendor key shapes (sk-proj-*, ghp-*) do.
+  // That charset distinction — plus the length floor — is what keeps a real
+  // credential from hiding behind an algorithm label.
+  const DIGEST_BODY = /^[A-Za-z0-9+/=]+$/;
+  for (const [prefix, floor] of Object.entries(DIGEST_BODY_FLOOR)) {
+    if (candidate.startsWith(prefix)) {
+      const body = candidate.slice(prefix.length);
+      return (
+        DIGEST_BODY.test(body) && body.length >= floor && body.length <= 88
+      );
+    }
   }
   if (context.before.endsWith('integrity=') || context.before.endsWith('integrity="')) {
-    return /^[A-Za-z0-9+/=]+$/.test(candidate);
+    // SRI values carry their own algorithm prefix; bare base64 in this
+    // position is not an SRI hash and gets no exclusion.
+    return /^sha(256|384|512)-[A-Za-z0-9+/=]+$/.test(candidate);
   }
   return false;
 }
 
 function isDataUri(candidate: string, context: ExclusionContext): boolean {
-  if (candidate.startsWith('data:')) return true;
-  return /data:[^/]*\/[^;]*;base64,$/.test(context.before);
+  // Audit fix: was prefix-only. A data: URI must now look like one — a MIME
+  // type, and if base64 is claimed, a decodable-length body — before its
+  // content can hide from detection.
+  const match = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+)?(;?[a-z0-9-]+=[a-z0-9-]+)*(;base64,)?(.*)$/i.exec(
+    candidate,
+  );
+  if (match !== null) {
+    const [, mime, , base64Marker, body] = match;
+    if ((mime ?? '') === '') return false; // `data:` alone proves nothing
+    if (base64Marker !== undefined) {
+      return /^[A-Za-z0-9+/=]*$/.test(body ?? '') && (body ?? '').length % 4 === 0 && (body ?? '').length > 0;
+    }
+    return true;
+  }
+  return /data:[a-z0-9.+-]+\/[a-z0-9.+-]+(;[a-z0-9-]+=[a-z0-9-]+)*;base64,[A-Za-z0-9+/=]+$/.test(
+    context.before,
+  );
 }
 
 function isFilesystemPath(candidate: string): boolean {
   const hasPathSep = candidate.includes('/') || candidate.includes(String.fromCharCode(92));
   if (!hasPathSep) return false;
   const hasCredential = /[a-z][a-z0-9+.-]*:\/\/[^@]*:.*@/.test(candidate);
-  return !hasCredential;
+  if (hasCredential) return false;
+  // Audit fix: any slash-containing string used to be excluded, but ~27% of
+  // random base64 credentials contain `/`. Require actual path structure:
+  // an anchored form or a path-like extension — not merely a slash.
+  const pathlike =
+    /^\.\.?[/\\]/.test(candidate) || // ./x, ../x
+    /^[/\\]/.test(candidate) || // absolute POSIX
+    /^[A-Za-z]:[/\\]/.test(candidate) || // drive path
+    /\.[A-Za-z][A-Za-z0-9]{0,7}$/.test(candidate); // ends in an extension
+  return pathlike;
 }
 
 function isPlainUrl(candidate: string): boolean {
   try {
     const url = new URL(candidate);
-    return (url.protocol === 'http:' || url.protocol === 'https:') &&
-           url.username === '' && url.password === '';
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    if (url.username !== '' || url.password !== '') {
+      return false;
+    }
+    // Audit fix: URLs whose query carries credential-shaped parameters are a
+    // real delivery channel for keys (Google-style ?key=...), not plain links.
+    if (/[?&](key|token|secret|password|passwd|api[-_]?key|access[-_]?token|sig|signature|credential)s?=/i.test(url.search)) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }

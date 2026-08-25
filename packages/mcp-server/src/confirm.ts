@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import type { BrokerOptions, TargetInfo } from '@envseal/core';
+import {
+  useConfirmationBody as sharedUseConfirmationBody,
+  escapeForDisplay as coreEscapeForDisplay,
+  displayArg as coreDisplayArg,
+  type BrokerOptions,
+  type TargetInfo,
+} from '@envseal/core';
 import type { ManifestEntry, VerifyResult } from '@envseal/protocol';
 import { SepError, zero } from '@envseal/protocol';
 import type { Prompter } from '@envseal/prompters';
@@ -22,13 +28,11 @@ import { makeDisplayNonce } from '@envseal/prompters';
  * between a prompt-injected model and arbitrary code holding live
  * credentials. In CI these operations are simply unavailable, and say so.
  *
- * DUPLICATION: this file is a hand-maintained twin of
- * packages/sdk/src/confirm.ts. Its natural home is a `confirm()` method
- * on the `Prompter` interface — every surface already knows how to draw a
- * dialog — but @envseal/mcp-server does not depend on @envseal/sdk, and
- * @envseal/prompters was outside the scope of the change that added this. Both
- * packages test the behaviour independently, so drift shows up as a red test
- * rather than as a binding that quietly stops asking.
+ * DUPLICATION: this file remains a hand-maintained twin of
+ * packages/sdk/src/confirm.ts for the ask/outcome mapping, but the dialog
+ * BODY (escaping, truncation caps, fingerprints, warnings) is shared via
+ * useConfirmationBody from @envseal/core so the CLI, SDK and MCP surfaces
+ * can never drift on what the user is shown.
  */
 
 /** Value-entry key name carrying the `env_use` confirmation. */
@@ -37,11 +41,8 @@ export const CONFIRM_KEY_USE = 'APPROVE';
 export const CONFIRM_KEY_PROBE = 'APPROVE_PROBE';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-/** Per-argument display cap; longer arguments are shown truncated, and said to be. */
-const MAX_ARG_CHARS = 300;
 /** Whole-dialog cap. Past this we refuse rather than ask about something unreadable. */
 const MAX_BODY_CHARS = 16 * 1024;
-
 const INSTRUCTION = 'Type yes to approve, or submit an empty box to deny.';
 
 export interface ConfirmSurface {
@@ -63,33 +64,11 @@ type AskOutcome = 'approved' | 'denied' | 'timed-out' | 'no-surface' | 'busy' | 
  */
 let confirmationOpen = false;
 
-/**
- * Model-supplied argv, key names and probe metadata land in a dialog the user
- * is about to trust. A raw newline lets a crafted argument forge extra lines —
- * "keys: none", "this command is safe" — inside the very block that exists to
- * tell the truth about the command. Render control characters visibly instead.
- */
-function escapeForDisplay(value: string): string {
-  let out = '';
-  for (const ch of value) {
-    const code = ch.codePointAt(0) ?? 0;
-    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-      out += `<0x${code.toString(16).padStart(2, '0')}>`;
-    } else {
-      out += ch;
-    }
-  }
-  return out;
-}
-
-function displayArg(arg: string): string {
-  const escaped = escapeForDisplay(arg);
-  if (escaped.length <= MAX_ARG_CHARS) {
-    return escaped;
-  }
-  const hidden = escaped.length - MAX_ARG_CHARS;
-  return `${escaped.slice(0, MAX_ARG_CHARS)}[... ${hidden} more characters, not shown]`;
-}
+// Re-exported so existing importers of the twins keep working; the
+// implementations live in @envseal/core/display.ts and are shared across
+// every binding (CLI, SDK and MCP alike).
+export const escapeForDisplay = coreEscapeForDisplay;
+export const displayArg = coreDisplayArg;
 
 export function useConfirmationBody(
   info: {
@@ -100,62 +79,7 @@ export function useConfirmationBody(
   },
   projectRoot: string,
 ): string {
-  const lines: string[] = [
-    'EnvSeal is about to run a program with these secrets in its environment.',
-    '',
-    `  project: ${escapeForDisplay(projectRoot)}`,
-    `  keys:    ${info.keys.length > 0 ? info.keys.map(escapeForDisplay).join(', ') : '(none)'}`,
-    '',
-    '  command, one argument per line, exactly as it will be run (no shell):',
-  ];
-  info.command.forEach((arg, index) => {
-    lines.push(`    [${index}] ${displayArg(arg)}`);
-  });
-  lines.push('');
-  if (info.target) {
-    const { resolvedPath, sha256, hashedFiles } = info.target;
-    const targetLabel =
-      sha256 !== null
-        ? escapeForDisplay(resolvedPath)
-        : `${escapeForDisplay(resolvedPath)} (not a readable file)`;
-    lines.push(`  target:  ${targetLabel}`);
-    if (hashedFiles.length > 0) {
-      // The approval binds to these fingerprints, not to the text above:
-      // every named file is re-hashed just before spawn and any mismatch
-      // refuses with SEP_TARGET_CHANGED, so content swapped in after this
-      // dialog closes does not run.
-      for (const file of hashedFiles) {
-        lines.push(`    ${escapeForDisplay(file.argument)}`);
-        lines.push(`      sha256: ${file.sha256}`);
-      }
-      lines.push(
-        '  Each listed file is re-checked against its fingerprint immediately',
-        '  before the program runs; one that changed since you read this will',
-        '  not run.',
-      );
-    } else {
-      // Honest about the boundary of the control: nothing in the command
-      // named a readable file, so approval stays name-level.
-      lines.push('  No argument named a readable file, so approval covers names only.');
-    }
-    lines.push('');
-  }
-  if (info.networkEgress) {
-    lines.push(
-      '  WARNING: this command can reach the network, so it could send these',
-      '           values somewhere. Only continue if you trust it.',
-    );
-  } else {
-    // Honest about what the check is worth: NETWORK_TOOLS plus a URL scan is a
-    // heuristic, and claiming more would be the kind of overstatement this
-    // project has already had to walk back once.
-    lines.push(
-      '  No network tool or URL was recognised in this command. That is a',
-      '  heuristic, not a guarantee: any program can open a socket.',
-    );
-  }
-  lines.push('', `${INSTRUCTION} Nothing runs unless you approve.`);
-  return lines.join('\n');
+  return sharedUseConfirmationBody(info, projectRoot);
 }
 
 export function probeConfirmationBody(entry: ManifestEntry): string | null {

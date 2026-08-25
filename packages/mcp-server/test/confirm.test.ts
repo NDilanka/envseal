@@ -118,8 +118,10 @@ describe('env_use confirmation', () => {
     const shown = prompter.requests[0]?.keys[0]?.description ?? '';
     // The forged line must not exist as a line of its own...
     expect(shown.split('\n')).not.toContain('  keys:    (none)');
-    // ...and the newline must be visible as text instead.
-    expect(shown).toContain('<0x0a>');
+    // ...and the newline must be visible as text instead. (Marker format is
+    // <U+XXXX> since the escaper moved to core/display.ts and gained
+    // unicode-separator/bidi coverage.)
+    expect(shown).toContain('<U+000A>');
     // The real key line survives.
     expect(shown).toContain('keys:    REAL_KEY');
   });

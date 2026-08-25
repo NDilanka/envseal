@@ -149,7 +149,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 
 **Why they exist:** so the test suites can drive the real binaries end to end — including the zero-leak assertions — without a human at a browser or dialog.
 
-**What bounds them:** every hook is double-gated (test mode AND a second variable must both be set), nothing in the shipped packages sets them for you, and each activation prints a notice. They are still a deliberate hole in the "a value only ever comes from the user" guarantee. Anyone who can set environment variables for the agent's process can already do worse (read `.env`, run arbitrary code), so these hooks grant no new power — but they are documented here so nobody who finds them in source mistakes them for a hidden hole.
+**What bounds them:** every hook is double-gated (test mode AND a second variable must both be set), nothing in the shipped packages sets them for you, and each activation prints a notice — including the stub prompter, which since 0.1.3 announces every answered key on stderr (`ENVSEAL_TEST_MODE: prompter is a STUB …`), so an agent that discovers the gate cannot use it as a *silent* approval oracle. They are still a deliberate hole in the "a value only ever comes from the user" guarantee. Anyone who can set environment variables for the agent's process can already do worse (read `.env`, run arbitrary code), so these hooks grant no new power — but they are documented here so nobody who finds them in source mistakes them for a hidden hole.
 
 **Mitigation:**
 - Do not set these variables outside test runs

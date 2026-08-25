@@ -30,9 +30,36 @@ describe('exclusions', () => {
     });
   });
 
-  it('should exclude with integrity context', () => {
-    const candidate = 'z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==';
+  it('should exclude a well-formed SRI hash with integrity context', () => {
+    // Real SRI shape: algorithm prefix + base64 body (sha512 of empty input).
+    const candidate = 'sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==';
     expect(isExcluded(candidate, { before: 'integrity="', after: '' })).toBe(true);
+  });
+
+  it('should NOT exclude bare base64 behind integrity= (audit fix: was the suppression hole)', () => {
+    // 50 base64 chars with no SRI prefix is not an integrity hash — this is
+    // exactly how a real credential used to hide in the digest bucket.
+    const candidate = 'z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==';
+    expect(isExcluded(candidate, { before: 'integrity="', after: '' })).toBe(false);
+  });
+
+  it('should NOT exclude a credential parked behind sha256: (audit fix)', () => {
+    // sk- keys are ~51 chars of base64-alphabet — under the old prefix-only
+    // rule `sha256:<anything>` excluded them; now the length floor rejects.
+    expect(isExcluded('sha256:sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { before: '', after: '' })).toBe(false);
+    expect(isExcluded(`sha256:${'A'.repeat(60)}`, { before: '', after: '' })).toBe(true); // plausible digest still excluded
+  });
+
+  it('should NOT exclude slash-bearing random credentials as paths (audit fix)', () => {
+    // Random base64 with a slash and no path structure must stay detectable.
+    expect(isExcluded('Ab3dE5fG7hJ9kL1mNpQrStUvWxYz02345678aBcD/efg', { before: '', after: '' })).toBe(false);
+    // Genuine relative path still excluded.
+    expect(isExcluded('./config/settings.json', { before: '', after: '' })).toBe(true);
+  });
+
+  it('should NOT exclude URLs carrying key= query params (audit fix)', () => {
+    expect(isExcluded('https://maps.example.com/v1?key=AIzaSyD-9tJqAAAAAAAAAAAAAAAAAAAAAAAAAAAA', { before: '', after: '' })).toBe(false);
+    expect(isExcluded('https://example.com/docs?page=2', { before: '', after: '' })).toBe(true);
   });
 
   it('should return non-empty reason when excluded', () => {

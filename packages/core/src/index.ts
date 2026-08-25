@@ -18,6 +18,7 @@ export type { DotenvLine, ParsedDotenv, WriteDotenvOptions } from './sinks/doten
 export * from './approvals.js';
 export * from './verify.js';
 export * from './exec.js';
+export * from './display.js';
 export * from './sinks/registry.js';
 export { keychainSink } from './sinks/keychain.js';
 export * from './broker.js';

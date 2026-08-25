@@ -26,14 +26,24 @@ export function createStubPrompter(value: string): Prompter {
   return {
     id: 'ide',
     available: async () => true,
-    prompt: async (req: PromptRequest): Promise<PromptResponse> => ({
-      ticket: req.ticket,
-      results: req.keys.map((k) => ({
-        key: k.key,
-        outcome: 'entered' as const,
-        value: secretFromUtf8(value),
-      })),
-    }),
+    prompt: async (req: PromptRequest): Promise<PromptResponse> => {
+      // Announce the stub on stderr, mirroring the CLI's probe-approval
+      // notice: any answer that did not come from a human must be visible in
+      // the transcript. A model that discovers the two-variable gate cannot
+      // use it as a silent approval oracle.
+      process.stderr.write(
+        `ENVSEAL_TEST_MODE: prompter is a STUB — key(s) [${req.keys.map((k) => k.key).join(', ')}] ` +
+          `answered from ENVSEAL_TEST_PROMPTER_VALUE with no UI.\n`,
+      );
+      return {
+        ticket: req.ticket,
+        results: req.keys.map((k) => ({
+          key: k.key,
+          outcome: 'entered' as const,
+          value: secretFromUtf8(value),
+        })),
+      };
+    },
     cancel: async () => {
       /* nothing to tear down */
     },

@@ -75,17 +75,30 @@ function respondText(
 function renderKeySection(key: PromptKeyRequest): string {
   const sectionId = `field-${key.key}`;
   const revealId = `reveal-${key.key}`;
+  // Audit follow-up: these links are manifest/model-controlled. Rendering a
+  // polished "Get your key" button with no destination shown turned the
+  // consent page itself into a phishing referral inside trusted envseal
+  // chrome. The hostname is now part of the visible link text, so wherever
+  // the user would land is on screen before they click.
+  const externalLink = (cls: string, url: string, label: string): string => {
+    let host: string;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      return ''; // unreachable when isHttpUrl gates the call; fail closed anyway
+    }
+    return (
+      `      <p class="${cls}"><a href="${escapeHtml(url)}" ` +
+      `rel="noreferrer noopener" target="_blank">${escapeHtml(label)} \u2192 ${escapeHtml(host)}</a></p>\n`
+    );
+  };
   let signup = '';
   if (isHttpUrl(key.signupUrl ?? '')) {
-    signup =
-      `      <p class="signup"><a href="${escapeHtml(key.signupUrl ?? '')}" ` +
-      `rel="noreferrer noopener" target="_blank">Get your key</a></p>\n`;
+    signup = externalLink('signup', key.signupUrl ?? '', 'Get your key');
   }
   let docs = '';
   if (isHttpUrl(key.docsUrl ?? '')) {
-    docs =
-      `      <p class="docs"><a href="${escapeHtml(key.docsUrl ?? '')}" ` +
-      `rel="noreferrer noopener" target="_blank">Documentation</a></p>\n`;
+    docs = externalLink('docs', key.docsUrl ?? '', 'Documentation');
   }
   let hint = '';
   if (key.formatHint) {

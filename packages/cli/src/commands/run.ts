@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline';
 import { SepError } from '@envseal/protocol';
-import type { TargetInfo } from '@envseal/core';
+import { useConfirmationBody, type TargetInfo } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { createBroker } from '../cli-utils.js';
 import { loadManifest, projectPaths } from '@envseal/core';
@@ -14,9 +14,11 @@ import { finish } from '../exit.js';
  * prompt reads from the controlling terminal, so it still works when stdout is
  * being piped.
  *
- * Fails closed: no TTY and no --yes means no approval. That is the right
- * default, because the alternative is a CI job silently handing credentials to
- * whatever it was told to run.
+ * The dialog body comes from the SAME useConfirmationBody the MCP and SDK
+ * bindings render — one escaping/fingerprint implementation for every
+ * surface. Fails closed: no TTY and no --yes means no approval. That is the
+ * right default, because the alternative is a CI job silently handing
+ * credentials to whatever it was told to run.
  */
 async function confirmInteractive(info: {
   command: string[];
@@ -29,34 +31,20 @@ async function confirmInteractive(info: {
     // Distinct from a refusal. Reporting "the user denied the confirmation" when
     // no human was ever asked is actively misleading, and it is the shell-only
     // agents of Tier 4 that hit this path — the ones this binding exists for.
+    // Deliberately silent about HOW to proceed headlessly: this message lands in
+    // agent-visible stderr, and advertising the bypass here handed every reader
+    // a one-liner to skip the dialog entirely (documented in docs/ci.md instead).
     throw new SepError({
       code: 'SEP_NO_INTERACTIVE_SURFACE',
       userMessage:
         'envseal run needs confirmation before injecting secrets, but there is no terminal to ask on. ' +
-        'Re-run in an interactive shell, or pass --yes (or set ENVSEAL_ASSUME_YES=1) to approve non-interactively.',
+        'Nothing was run and no value was read. Re-run it yourself in an interactive shell to review and ' +
+        'approve the command; see docs/ci.md for the supported headless pipeline setup.',
     });
   }
 
-  const lines = [
-    '',
-    'envseal is about to run a command with secrets in its environment:',
-    `  command: ${info.command.join(' ')}`,
-    `  keys:    ${info.keys.join(', ')}`,
-  ];
-  if (info.target.sha256 !== null) {
-    lines.push(`  target:  ${info.target.resolvedPath}`);
-    lines.push(`  sha256:  ${info.target.sha256}`);
-  } else {
-    lines.push(`  target:  ${info.target.resolvedPath} (not a readable file — approved by name only)`);
-  }
-  if (info.networkEgress) {
-    lines.push(
-      '  WARNING: this command can make network requests, so it could send',
-      '           these values somewhere. Only continue if you trust it.',
-    );
-  }
-  lines.push('');
-  process.stderr.write(lines.join('\n'));
+  const body = useConfirmationBody(info, process.cwd());
+  process.stderr.write(`\n${body}\n\n`);
 
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {

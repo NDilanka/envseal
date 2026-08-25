@@ -111,6 +111,22 @@ export function isDeniedSecretPath(path: string): boolean {
   if (base === 'env.schema.jsonc') {
     return false;
   }
+  // Glob audit: `.env*` must be treated as possibly-.env, not as a literal
+  // name that matches nothing. If the glob-stripped form could resolve to a
+  // denied name, deny — a read that MIGHT hit a secret file must not pass
+  // silently just because the model wrote a wildcard.
+  if (/[*?[]/.test(base)) {
+    const globless = base.replace(/[*?[\]]/g, '');
+    const deniedNames = ['.env', 'credentials.json', 'id_rsa'];
+    if (
+      deniedNames.some((n) => n.startsWith(globless) || globless.startsWith(n)) ||
+      /^\.env\..+/.test(globless) ||
+      /^secrets\.[a-z0-9]*$/i.test(globless) ||
+      /\.(pem|key)$/i.test(globless)
+    ) {
+      return true;
+    }
+  }
   if (base === '.env') {
     return true;
   }
@@ -164,7 +180,30 @@ export function stripAssignments(segment: string): string {
 export function headOf(segment: string): string {
   const stripped = stripAssignments(segment);
   const first = /^([^\s]+)/.exec(stripped);
-  return first?.[1] ?? '';
+  let head = first?.[1] ?? '';
+  // Wrapper audit: `sudo cat .env`, `command cat .env`, `xargs cat .env`,
+  // `env FOO=1 cat .env` all execute the reader through a transparent
+  // wrapper. Strip known wrappers — but ONLY when another word follows, so a
+  // bare `env` stays `env` and its own dump check (envIsBare) still fires —
+  // then resolve any remaining path prefix to its basename so `/bin/cat
+  // .env` matches the same way bare `cat .env` does. Wrapper FLAGS (e.g.
+  // `sudo -u root`) end the unwrapping; the denylist stays a heuristic layer,
+  // not a shell parser.
+  const WRAPPERS = new Set(['sudo', 'command', 'exec', 'builtin', 'nice', 'nohup', 'xargs', 'env']);
+  for (;;) {
+    const bare = head.replace(/^["']|["']$/g, '');
+    if (!WRAPPERS.has(bare)) {
+      break;
+    }
+    let rest = stripped.slice(stripped.indexOf(bare) + bare.length).trim();
+    rest = stripAssignments(rest);
+    const next = /^([^\s]+)/.exec(rest);
+    if (next === null) {
+      break; // bare wrapper word: leave it for its own checks
+    }
+    head = next[1]!;
+  }
+  return head.split('/').pop() ?? head;
 }
 
 export function isSecretShapedPattern(pattern: string): boolean {
@@ -185,10 +224,11 @@ export function pathTokens(segment: string): string[] {
     .map((token) => token.replace(/\$[A-Za-z_][A-Za-z0-9_]*|\$\{[^}]*\}/g, '').replace(/^~/, ''));
 }
 
-export function echoReferencesSecret(segment: string, declared: Set<string>): string | null {
-  if (!/\becho\b/.test(segment)) {
-    return null;
-  }
+/**
+ * Pure scan: the first declared secret whose $VAR/${VAR} form appears in the
+ * segment. No command gating — callers decide which commands warrant it.
+ */
+export function declaredVarReference(segment: string, declared: Set<string>): string | null {
   SECRET_VAR_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = SECRET_VAR_RE.exec(segment)) !== null) {
@@ -198,6 +238,13 @@ export function echoReferencesSecret(segment: string, declared: Set<string>): st
     }
   }
   return null;
+}
+
+export function echoReferencesSecret(segment: string, declared: Set<string>): string | null {
+  if (!/\b(?:echo|printf)\b/.test(segment)) {
+    return null;
+  }
+  return declaredVarReference(segment, declared);
 }
 
 export function grepIsRecursive(segment: string): boolean {
@@ -317,24 +364,63 @@ export function decideBash(command: string, declared: Set<string>): Decision {
       }
     }
 
-    // W3-07: bash's `$(<file)` redirection shorthand reads a file with no
-    // reader command at all. Segment splitting on the parens surfaces it as a
-    // segment that begins with `<`, so match that shape directly.
-    const shorthand = /^<\s*(.+)$/.exec(segment);
-    if (shorthand !== null) {
-      const target = shorthand[1] ?? '';
-      const token = target.replace(/^['"]+|['"]+$/g, '').replace(/^~/, '');
+    // W3-07 + audit follow-up: bash's `$(<file)` shorthand AND any mid-command
+    // input redirection (`base64 -w0 < .env`, `wc -c < .env`) read a file into
+    // the transcript with no recognized reader command. Scan every whitespace
+    // token for a single-arrow redirect; `<<<` is a here-string (literal body,
+    // not a file read) and is handled by the declared-variable scan below.
+    const words = segment.split(/\s+/);
+    for (let i = 0; i < words.length; i += 1) {
+      const word = words[i]!;
+      let candidate: string | undefined;
+      if (word === '<' && i + 1 < words.length) {
+        candidate = words[i + 1];
+      } else if (/^<[^<]/.test(word)) {
+        candidate = word.slice(1); // glued form: `$(<.env)`, `<.env`
+      }
+      if (candidate === undefined || candidate === '') {
+        continue;
+      }
+      const token = candidate.replace(/^['"]+|['"]+$/g, '').replace(/^~/, '');
       if (isDeniedSecretPath(token)) {
         return {
           allow: false,
           reason:
-            `Blocked: \`$(<${token})\` would put the contents of \`${token}\` in the transcript. ` +
+            `Blocked: \`< ${token}\` would put the contents of \`${token}\` in the transcript. ` +
             'Use `env_describe` for status or `env_verify` to test the key.',
         };
       }
     }
 
-    if (head === 'echo') {
+    if (head === 'declare' || head === 'typeset' || head === 'local') {
+      // `-p` prints definitions WITH values of every matching variable.
+      if (/(^|\s)-\w*p/.test(segment)) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: \`${head} -p\` would print variable definitions, including secret values. ` +
+            'Use `env_describe` to list declared keys instead.',
+        };
+      }
+    }
+
+    // Audit follow-up: a here-string pipes whatever it expands to straight
+    // into a command's stdin — `cat <<< $OPENAI_API_KEY` prints the value
+    // without any reader-on-path shape. Any segment carrying `<<<` gets the
+    // declared-variable scan regardless of its command.
+    if (segment.includes('<<<')) {
+      const exposed = declaredVarReference(segment, declared);
+      if (exposed !== null) {
+        return {
+          allow: false,
+          reason:
+            `Blocked: this command would expand $${exposed} into output. ` +
+            `Store it with \`/env:set ${exposed}\` and inject it via \`env_use\` if a command needs it.`,
+        };
+      }
+    }
+
+    if (head === 'echo' || head === 'printf') {
       const exposed = echoReferencesSecret(segment, declared);
       if (exposed !== null) {
         return {

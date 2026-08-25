@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { SepError } from '@envseal/protocol';
+import type { TargetInfo } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { createBroker } from '../cli-utils.js';
 import { loadManifest, projectPaths } from '@envseal/core';
@@ -21,6 +22,7 @@ async function confirmInteractive(info: {
   command: string[];
   keys: string[];
   networkEgress: boolean;
+  target: TargetInfo;
 }): Promise<boolean> {
   if (process.env.ENVSEAL_ASSUME_YES === '1') return true;
   if (!process.stdin.isTTY) {
@@ -41,6 +43,12 @@ async function confirmInteractive(info: {
     `  command: ${info.command.join(' ')}`,
     `  keys:    ${info.keys.join(', ')}`,
   ];
+  if (info.target.sha256 !== null) {
+    lines.push(`  target:  ${info.target.resolvedPath}`);
+    lines.push(`  sha256:  ${info.target.sha256}`);
+  } else {
+    lines.push(`  target:  ${info.target.resolvedPath} (not a readable file — approved by name only)`);
+  }
   if (info.networkEgress) {
     lines.push(
       '  WARNING: this command can make network requests, so it could send',

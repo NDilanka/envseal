@@ -9,7 +9,7 @@ import type { SepErrorCode } from '../src/errors.js';
 
 describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
   it('declares a default for every error code', () => {
-    expect(SEP_ERROR_CODES.length).toBe(14);
+    expect(SEP_ERROR_CODES.length).toBe(15);
     for (const code of SEP_ERROR_CODES) {
       const defaults = SEP_ERROR_DEFAULTS[code];
       expect(defaults).toBeDefined();
@@ -55,6 +55,8 @@ describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
           return false;
         case 'SEP_CONFIRMATION_DENIED':
           return false;
+        case 'SEP_TARGET_CHANGED':
+          return true;
         case 'SEP_RATE_LIMITED':
           return true;
       }

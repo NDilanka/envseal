@@ -42,6 +42,7 @@ export function exitCodeForError(e: unknown): number {
     case 'SEP_FORMAT_INVALID':
     case 'SEP_RATE_LIMITED':
     case 'SEP_TICKET_UNKNOWN':
+    case 'SEP_TARGET_CHANGED':
     case 'SEP_CONFIRMATION_DENIED':
       return EXIT.UNSATISFIED;
 

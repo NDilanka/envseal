@@ -13,6 +13,7 @@ export const SEP_ERROR_CODES = [
   'SEP_GITIGNORE_UNSAFE',
   'SEP_CONFIRMATION_DENIED',
   'SEP_RATE_LIMITED',
+  'SEP_TARGET_CHANGED',
 ] as const;
 
 export type SepErrorCode = (typeof SEP_ERROR_CODES)[number];
@@ -78,6 +79,12 @@ export const SEP_ERROR_DEFAULTS: Record<SepErrorCode, SepErrorDefaults> = {
   SEP_RATE_LIMITED: {
     retriable: true,
     userMessage: 'Rate limited. Please retry later.',
+  },
+  SEP_TARGET_CHANGED: {
+    retriable: true,
+    userMessage:
+      'The program to run changed on disk after you approved it. Nothing was executed. ' +
+      'Re-run the command to review the current content and approve it again.',
   },
 };
 

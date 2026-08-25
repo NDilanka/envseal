@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { BrokerOptions } from '@envseal/core';
+import type { BrokerOptions, TargetInfo } from '@envseal/core';
 import type { ManifestEntry, VerifyResult } from '@envseal/protocol';
 import { SepError, zero } from '@envseal/protocol';
 import type { Prompter } from '@envseal/prompters';
@@ -92,7 +92,12 @@ function displayArg(arg: string): string {
 }
 
 export function useConfirmationBody(
-  info: { command: string[]; keys: string[]; networkEgress: boolean },
+  info: {
+    command: string[];
+    keys: string[];
+    networkEgress: boolean;
+    target?: TargetInfo;
+  },
   projectRoot: string,
 ): string {
   const lines: string[] = [
@@ -107,6 +112,34 @@ export function useConfirmationBody(
     lines.push(`    [${index}] ${displayArg(arg)}`);
   });
   lines.push('');
+  if (info.target) {
+    const { resolvedPath, sha256, hashedFiles } = info.target;
+    const targetLabel =
+      sha256 !== null
+        ? escapeForDisplay(resolvedPath)
+        : `${escapeForDisplay(resolvedPath)} (not a readable file)`;
+    lines.push(`  target:  ${targetLabel}`);
+    if (hashedFiles.length > 0) {
+      // The approval binds to these fingerprints, not to the text above:
+      // every named file is re-hashed just before spawn and any mismatch
+      // refuses with SEP_TARGET_CHANGED, so content swapped in after this
+      // dialog closes does not run.
+      for (const file of hashedFiles) {
+        lines.push(`    ${escapeForDisplay(file.argument)}`);
+        lines.push(`      sha256: ${file.sha256}`);
+      }
+      lines.push(
+        '  Each listed file is re-checked against its fingerprint immediately',
+        '  before the program runs; one that changed since you read this will',
+        '  not run.',
+      );
+    } else {
+      // Honest about the boundary of the control: nothing in the command
+      // named a readable file, so approval stays name-level.
+      lines.push('  No argument named a readable file, so approval covers names only.');
+    }
+    lines.push('');
+  }
   if (info.networkEgress) {
     lines.push(
       '  WARNING: this command can reach the network, so it could send these',

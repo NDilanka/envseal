@@ -16,6 +16,8 @@ the broker will:
 
 **What the control actually prevents:** A user who does not read the dialog, or who does not understand the implications of their click, will send the key to the attacker.
 
+**What the control binds to (since 0.1.3):** Approval is bound to file *content*, not just the displayed command line. Every argument that names a readable file is SHA-256 hashed before the dialog opens and the fingerprints are shown in it; immediately before spawn each file is re-read and compared. If anything changed in between — the classic injection scenario where repo content rewrites the very script the model asked to run while the dialog sits open — the run refuses with `SEP_TARGET_CHANGED`, nothing executes, and the next attempt prompts again from scratch (nothing is cached). Boundaries: arguments that are not readable files (PATH-resolved executables like `node`, `python`) are approved by name; the pre-spawn re-check narrows the mutation race to microseconds but cannot eliminate it entirely (that would require passing an open fd to the OS loader, which Node's `spawn` does not expose).
+
 **What the control does NOT prevent:** A user who reads the dialog, understands it says "this will send your key to attacker.example", and clicks confirm anyway. In that case, the key is sent. There is no cryptographic guarantee, no sandboxing, no third approval from a security officer. The user has made a deliberate choice and the system respects it.
 
 **Why this is inherent:** envseal's purpose is to provision keys to development environments where an AI agent can run arbitrary code. If the agent can execute code, it can potentially exfiltrate a key. The only two ways to prevent this completely are:

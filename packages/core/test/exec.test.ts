@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { asSecret } from '@envseal/protocol';
 import { SepError } from '@envseal/protocol';
 import { runWithSecrets } from '../src/exec.js';
@@ -139,6 +143,158 @@ describe('exec', () => {
       );
 
       expect(result.timedOut).toBe(true);
+    });
+
+    // T11 hardening: consent binds to the target's content, not just its name.
+    describe('target hashing (T11)', () => {
+      it('surfaces target path and sha256 to onConfirm for a script target', { timeout: 30_000 }, async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'envseal-exec-'));
+        const script = join(dir, 'script.mjs');
+        writeFileSync(script, "console.log('hi');\n", 'utf8');
+        try {
+          const value = asSecret(Buffer.from('secret-value', 'utf8'));
+          const secrets = new Map([['TEST_KEY', value]]);
+          const seen: { path: string; sha256: string | null }[] = [];
+
+          const result = await runWithSecrets(['node', script], secrets, {
+            onConfirm: async (info) => {
+              seen.push({ path: info.target.resolvedPath, sha256: info.target.sha256 });
+              return true;
+            },
+          });
+
+          expect(result.exitCode).toBe(0);
+          expect(seen).toHaveLength(1);
+          // argv[0] ('node') resolves against the broker's own cwd (a PATH
+          // lookup happens inside spawn), so it reports <cwd>/node, unhashed.
+          expect(seen[0]!.path.toLowerCase()).toMatch(/[/\\]node$/);
+          // argv[0] is PATH-resolved, so it stays unhashed...
+          expect(seen[0]!.sha256).toBeNull();
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('hashes a repo script passed as an argument, not just argv[0]', { timeout: 30_000 }, async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'envseal-exec-'));
+        const script = join(dir, 'script.mjs');
+        writeFileSync(script, "console.log('hi');\n", 'utf8');
+        try {
+          const value = asSecret(Buffer.from('secret-value', 'utf8'));
+          const secrets = new Map([['TEST_KEY', value]]);
+
+          await runWithSecrets(['node', script], secrets, {
+            onConfirm: async (info) => {
+              // ...but the argument naming the script IS hashed and bound:
+              // `node ./build/publish.mjs` must be approved by content.
+              expect(info.target.hashedFiles).toHaveLength(1);
+              expect(info.target.hashedFiles[0]!.resolvedPath.toLowerCase()).toBe(script.toLowerCase());
+              expect(info.target.hashedFiles[0]!.sha256).toBe(
+                createHash('sha256').update(Buffer.from("console.log('hi');\n", 'utf8')).digest('hex'),
+              );
+              return true;
+            },
+          });
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('reports sha256 null when argv[0] does not name a readable file', { timeout: 30_000 }, async () => {
+        const value = asSecret(Buffer.from('secret-value', 'utf8'));
+        const secrets = new Map([['TEST_KEY', value]]);
+
+        await runWithSecrets(
+          process.platform === 'win32'
+            ? ['powershell', '-c', '$env:TEST_KEY']
+            : ['sh', '-c', 'echo $TEST_KEY'],
+          secrets,
+          {
+            onConfirm: async (info) => {
+              expect(info.target.sha256).toBeNull();
+              return true;
+            },
+          },
+        );
+      });
+
+      it('refuses with SEP_TARGET_CHANGED and runs nothing when content mutates between approval and spawn', { timeout: 30_000 }, async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'envseal-exec-'));
+        const script = join(dir, 'mutating.mjs');
+        writeFileSync(script, "console.log('benign');\n", 'utf8');
+        let mutations = 0;
+        try {
+          const value = asSecret(Buffer.from('secret-value', 'utf8'));
+          const secrets = new Map([['TEST_KEY', value]]);
+
+          await expect(
+            runWithSecrets(['node', script], secrets, {
+              onConfirm: async () => {
+                // The injected-content attack: the file changes while the
+                // approval dialog is open (or after it closes).
+                appendFileSync(script, `// mutation ${mutations}\n`, 'utf8');
+                mutations += 1;
+                return true;
+              },
+            }),
+          ).rejects.toMatchObject({ code: 'SEP_TARGET_CHANGED' });
+
+          expect(mutations).toBe(1);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('re-prompts after SEP_TARGET_CHANGED instead of caching a refusal', { timeout: 30_000 }, async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'envseal-exec-'));
+        const script = join(dir, 'settling.mjs');
+        writeFileSync(script, "console.log('v1');\n", 'utf8');
+        try {
+          const value = asSecret(Buffer.from('secret-value', 'utf8'));
+          const secrets = new Map([['TEST_KEY', value]]);
+          let calls = 0;
+
+          await expect(
+            runWithSecrets(['node', script], secrets, {
+              onConfirm: async () => {
+                calls += 1;
+                if (calls === 1) {
+                  // Content settles mid-flight: first attempt must refuse,
+                  // and nothing may be remembered against this command.
+                  writeFileSync(script, "console.log('v2');\n", 'utf8');
+                  return true;
+                }
+                return true;
+              },
+            }),
+          ).rejects.toMatchObject({ code: 'SEP_TARGET_CHANGED' });
+
+          expect(calls).toBe(1);
+
+          // Same command, second call: asked again from scratch, now stable,
+          // so it runs.
+          const result = await runWithSecrets(['node', script], secrets, {
+            onConfirm: async () => {
+              calls += 1;
+              return true;
+            },
+          });
+          expect(result.exitCode).toBe(0);
+          expect(calls).toBe(2);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('skips revalidation entirely for approvedCommands (no consent happened)', { timeout: 30_000 }, async () => {
+        const value = asSecret(Buffer.from('secret-api-key-12345', 'utf8'));
+        const secrets = new Map([['TEST_KEY', value]]);
+        const cmd =
+          process.platform === 'win32' ? ['powershell', '-c', '$env:TEST_KEY'] : ['sh', '-c', 'echo $TEST_KEY'];
+
+        const result = await runWithSecrets(cmd, secrets, { approvedCommands: [cmd.join(' ')] });
+        expect(result.stdout).toContain('«redacted');
+      });
     });
   });
 });

@@ -4,13 +4,13 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory instructions |
-| **Config file** | `.zed/settings.json` (project) or `~/.config/zed/settings.json` (global) |
+| **Config file** | `.zed/settings.json` (project) |
 
 Zed is **Tier B**: it speaks MCP but has no interception hooks.
 
-One note on detection: `envseal doctor` recognizes a `.zed/` directory at the
-project root, the global Zed config directories (`~/.config/zed/`, `~/.zed/`),
-or `ZED_EDITOR`, and reports `Host: Zed (Tier B)`.
+Doctor recognizes a `.zed/` directory at the project root, or `ZED_EDITOR` when
+there are no project markers. A global `~/.config/zed/` / `~/.zed/` install on
+a bare tree is labeled Generic Agent, not Zed. envseal does not write `$HOME`.
 
 `[VERIFY: Zed's MCP config has changed between versions — older builds used a
 `mcp` block in `settings.json`, newer ones moved toward a dedicated
@@ -20,19 +20,28 @@ file for you.]`
 
 ## Install
 
-`.zed/settings.json` (or `~/.config/zed/settings.json`):
+```sh
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host zed
+```
+
+`init` merges into project `.zed/settings.json` (sibling keys are left intact):
 
 ```json
 {
   "mcp": {
     "envseal-mcp": {
-      "command": "envseal-mcp"
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }
 ```
 
-Restart Zed, confirm the server under `MCP`, then run `envseal doctor`.
+Restart Zed, confirm the server under `MCP`, then run `envseal doctor`. Doctor
+warns / fails if the file has no envseal server after write (`[VERIFY]`).
 
 ## Keychain recommendation (Tier B)
 

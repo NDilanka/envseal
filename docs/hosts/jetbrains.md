@@ -4,14 +4,15 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory settings |
-| **Config file** | `.idea/mcp.json` (project) or IDE MCP settings |
+| **Config file** | `.idea/mcp.json` (project) |
 
 JetBrains IDEs (IntelliJ, PyCharm, etc.) are **Tier B**: their built-in MCP
 client exposes the seven tools, but nothing intercepts a shell command that
 leaks a value.
 
-One note on detection: `envseal doctor` recognizes the `.idea/` project
-directory and reports `Host: JetBrains IDE (Tier B)`.
+Doctor recognizes the `.idea/` project directory and reports `Host: JetBrains
+IDE (Tier B)`. Folder presence is not wiring: doctor fails if `.idea/mcp.json`
+has no `envseal-mcp`.
 
 `[VERIFY: JetBrains MCP config location/format varies by product and version —
 project `.idea/mcp.json`, the shared `mcpServers` layout in IDE settings, and a
@@ -21,13 +22,21 @@ file on your behalf. The snippet below is a common accepted shape.]`
 
 ## Install
 
-`.idea/mcp.json`:
+```sh
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host jetbrains
+```
+
+`init` merges project `.idea/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp"
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }

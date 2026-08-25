@@ -4,7 +4,7 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory rules |
-| **Config file** | `.windsurf/mcp_config.json` (project) or `~/.codeium/windsurf/mcp_config.json` (global) |
+| **Config file** | `.windsurf/mcp_config.json` (project) |
 
 Windsurf is **Tier B**: it speaks MCP but has no interception hooks.
 
@@ -18,17 +18,23 @@ your behalf.]`
 ## Install
 
 ```sh
-mkdir -p .windsurf
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host windsurf
 ```
 
-`.windsurf/mcp_config.json`:
+`init` writes project `.windsurf/mcp_config.json` (npx, not a bare
+`envseal-mcp`). It does not write `~/.codeium/windsurf/`. A global Windsurf
+install alone is **not** this project's agent: doctor labels a `$HOME`-only
+tree as Generic Agent, not Windsurf.
 
 ```json
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }
@@ -36,8 +42,8 @@ mkdir -p .windsurf
 
 Restart Windsurf, then confirm the server appears under MCP and run
 `envseal doctor`. The detector recognizes a `.windsurf/` directory at the
-project root or the global `~/.codeium/windsurf/` config directory and reports
-`Host: Windsurf (Tier B)`.
+project root (or `init --host windsurf`). Doctor fails if that file has no
+`envseal-mcp`.
 
 ## Keychain recommendation (Tier B)
 

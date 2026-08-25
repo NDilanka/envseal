@@ -1,4 +1,9 @@
-# ~/.continue/config.yaml — envseal MCP server (Continue — Tier B host)
+# Project-local copy of the envseal MCP snippet (Continue — Tier B host)
+#
+# Continue currently loads MCP from ~/.continue/config.yaml. `envseal init`
+# writes this file under project `.continue/` so doctor can detect the host
+# and so you have a block to merge into the global config. envseal never
+# writes $HOME.
 #
 # [VERIFY: recent Continue versions moved toward the new HUB config.yaml
 # schema; if your build does not accept a top-level `mcpServers` list, use
@@ -10,5 +15,5 @@
 
 mcpServers:
   - name: envseal-mcp
-    command: envseal-mcp
-    args: []
+    command: npx
+    args: ["-y", "@envseal/mcp-server"]

@@ -72,17 +72,22 @@ For a runnable walk-through of the whole lifecycle (`init` → `ensure --check` 
 
 ## Connect your agent
 
-Provisioning keys is only half of it: your agent asks for them through the broker, so the host has to be able to start the broker. For Claude Code, create `.mcp.json` at the project root:
+Provisioning keys is only half of it: your agent asks for them through the broker, so the host has to be able to start the broker.
 
-```json
-{
-  "mcpServers": {
-    "envseal-mcp": { "command": "envseal-mcp", "args": [] }
-  }
-}
+```bash
+npm install -D @envseal/cli
+npx envseal init
 ```
 
-Restart Claude Code afterwards. Copy-pasteable snippets for Cursor, Zed, Codex, Continue and the other hosts are in [docs/hosts/README.md](docs/hosts/README.md); installing the bundled plugin in `plugins/claude-code` on top of the MCP server is what earns tier A.
+`init` always merges Layer 1 instructions into project-root `AGENTS.md` (any agent that reads instruction files can then run `envseal ensure` / `envseal run --` instead of asking for a paste). If this repo has project-local host markers (`.cursor/`, `.claude/`, …), or you ran the command from that IDE, it also writes the **project** MCP (or equivalent) config so the agent gets `env_declare` / `env_request` / `env_await` / `env_verify` / `env_use`. A repo used from Cursor and Claude Code gets both `.cursor/mcp.json` and `.mcp.json`. `init` does not scan `$HOME` or wire every IDE on the machine.
+
+Launch is `npx -y @envseal/mcp-server` (`npx.cmd` on Windows). Host MCP launchers do not search `node_modules/.bin`, so a bare `envseal-mcp` command will not start. Project MCP already has the workspace as cwd — `--project` is not baked into committed files.
+
+Do **not** put envseal in `~/.cursor/mcp.json` (or other user-global MCP files) as the default: those processes often start with `cwd` = `$HOME`, and `envseal-mcp` then exits `no project found`. If detection cannot see the IDE (bare terminal on an empty tree), `init` writes `AGENTS.md` only and prints: re-run from the IDE, or `envseal init --host cursor`.
+
+Reload MCP / restart the host, then `envseal doctor`. Doctor fails if an MCP-capable host’s project folder exists but `envseal-mcp` is not actually configured.
+
+Claude Code: `init` = protocol connected (Tier B via `.mcp.json`). Install `plugins/claude-code` for Tier A hooks. Snippets for every host: [docs/hosts/README.md](docs/hosts/README.md).
 
 ## Works with any agent
 

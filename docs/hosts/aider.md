@@ -4,7 +4,7 @@
 |---|---|
 | **Binding tier** | 4 — CLI contract (`envseal` subcommands) |
 | **Protection tier** | **C** — protocol only |
-| **Config file** | `.aider.conf.yml` + `/run` recipe |
+| **Config file** | `.aider.conf.yml` + `/run` recipe + `AGENTS.md` |
 
 Aider has no MCP client, so it integrates at **Tier 4** via the `envseal`
 binary. Nothing intercepts leaks, and Aider *renders every file it reads into
@@ -13,8 +13,13 @@ integration is written around that.
 
 ## Install
 
-Copy `plugins/aider/.aider.conf.yml` (or merge the two lines below into your
-config):
+```sh
+npm install -D @envseal/cli
+npx envseal init --host aider
+```
+
+`init` merges Layer 1 `AGENTS.md` and merges `plugins/aider/.aider.conf.yml` so
+`.env` is **not** on the `read:` list:
 
 ```yaml
 # .aider.conf.yml — NEVER add `.env` or `.env.*` to `read`
@@ -23,8 +28,7 @@ read:
   - .env.example
 ```
 
-The `read` list is the guardrail: only declaration and placeholder files are
-ever brought into context.
+Doctor fails if `.env` appears under `read:`.
 
 ## Tier-4 usage (Aider `/run`)
 
@@ -43,7 +47,7 @@ secret values inside Aider.
 
 Tier C has no guardrails. Prefer the `keychain` sink to keep the value out of
 `.env` entirely: it is stored in the OS-backed store and nothing is written to
-`.env`, not even a reference. Note the sink both stores and resolves today —
+`.env` — not even a reference. Note the sink both stores and resolves today —
 `envseal run` injects a keychain-stored value just like a dotenv one:
 
 ```jsonc

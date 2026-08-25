@@ -13,8 +13,8 @@ ever printed.
 
 These two files are the generic drop-in:
 
-- **`AGENTS.md`** — paste into your project's `AGENTS.md` (or `CLAUDE.md`,
-  `CONTRIBUTING.md`, or wherever your agent reads instructions). It tells any
+- **`AGENTS.md`** — `npx envseal init` merges this into your project's
+  `AGENTS.md` (create or append; never clobbers unrelated content). It tells any
   agent, in imperative form, to never read `.env`, never echo variables, and to
   use `envseal ensure` / `envseal run --` instead.
 - **`pre-commit`** — a dependency-free POSIX `sh` git hook (only `git`, `grep`,
@@ -24,7 +24,15 @@ These two files are the generic drop-in:
 ## Install
 
 ```sh
-cp plugins/generic/AGENTS.md AGENTS.md          # or merge the contents
+npm install -D @envseal/cli
+npx envseal init
+# Layer 1 only on a bare tree; or:
+npx envseal init --host generic
+```
+
+Optional pre-commit hook:
+
+```sh
 install -m 0755 plugins/generic/pre-commit .git/hooks/pre-commit
 ```
 
@@ -35,7 +43,7 @@ envseal ensure                    # prompt for every missing required key
 envseal status --json             # machine-readable presence metadata
 envseal run -- <command...>       # run with secrets injected, output redacted
 envseal verify --json             # classified verification results
-envseal doctor --json             # host tier, gitignore, permissions, missing keys
+envseal doctor --json             # host tier, agentWiring, gitignore, missing keys
 ```
 
 `AGENTS.md` is an advisory guardrail: an agent that ignores instructions can

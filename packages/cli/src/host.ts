@@ -12,6 +12,26 @@ export interface HostInfo {
   recommendation: string;
 }
 
+/** Host ids `init --host` accepts. `openhands` is Layer 1 only. */
+export const KNOWN_HOST_IDS = [
+  'claude-code',
+  'cursor',
+  'continue',
+  'aider',
+  'windsurf',
+  'cline',
+  'zed',
+  'codex',
+  'jetbrains',
+  'goose',
+  'copilot',
+  'generic',
+  'unknown',
+  'openhands',
+] as const;
+
+export type HostId = (typeof KNOWN_HOST_IDS)[number];
+
 /**
  * Detect the host environment from marker files and env vars.
  * Tier A: protocol + interception hooks (Claude Code)
@@ -73,6 +93,110 @@ const TIER_B_ADVICE =
 const TIER_C_ADVICE =
   'Tier C host with protocol only. No interception hooks available; prefer the keychain sink so .env holds only references.';
 
+const AIDER_CONF_PATTERNS = ['aider', '.aider'];
+
+export function aiderMarkerExists(root: string): boolean {
+  return AIDER_CONF_PATTERNS.some(
+    (pattern) =>
+      existsSync(join(root, `${pattern}.conf.yml`)) ||
+      existsSync(join(root, `${pattern}.conf.yaml`)) ||
+      existsSync(join(root, `${pattern}.conf.json`)),
+  );
+}
+
+export function copilotSettingsExist(root: string): boolean {
+  const vscodeSettings = join(root, '.vscode', 'settings.json');
+  try {
+    return existsSync(vscodeSettings) && /copilot/i.test(readFileSync(vscodeSettings, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every project-local host marker in this repo. Used by `init` so a dual-host
+ * tree (`.cursor/` + `.claude/`) gets both configs. Does not include AGENTS.md
+ * (Layer 1 is always applied) and does not scan `$HOME`.
+ */
+export function collectProjectHostIds(root: string): string[] {
+  const ids: string[] = [];
+  if (existsSync(join(root, '.claude'))) ids.push('claude-code');
+  if (existsSync(join(root, '.cursor'))) ids.push('cursor');
+  if (existsSync(join(root, '.continue'))) ids.push('continue');
+  if (aiderMarkerExists(root)) ids.push('aider');
+  if (existsSync(join(root, '.windsurf'))) ids.push('windsurf');
+  if (existsSync(join(root, '.cline'))) ids.push('cline');
+  if (existsSync(join(root, '.zed'))) ids.push('zed');
+  if (existsSync(join(root, '.codex'))) ids.push('codex');
+  if (existsSync(join(root, '.idea'))) ids.push('jetbrains');
+  if (existsSync(join(root, 'goose.config.yaml')) || existsSync(join(root, '.goose'))) {
+    ids.push('goose');
+  }
+  if (copilotSettingsExist(root)) ids.push('copilot');
+  return ids;
+}
+
+/**
+ * This-process host only. Used by `init` when the project has no markers.
+ * Never treats a global `~/.cursor` / `~/.codex` install as this project.
+ */
+export function detectProcessHostId(): string | undefined {
+  if (process.env.CLAUDECODE) return 'claude-code';
+  if (process.env.CURSOR_WORKSPACE || process.env.CURSOR_VERSION) return 'cursor';
+  if (process.env.CLINE_ROOT) return 'cline';
+  if (process.env.ZED_EDITOR) return 'zed';
+  if (process.env.CODEX_ROOT) return 'codex';
+  if (process.env.GOOSE_ROOT) return 'goose';
+  return undefined;
+}
+
+export function parseHostOverride(raw: string): string[] | { error: string } {
+  const ids = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (ids.length === 0) {
+    return { error: `unknown --host '${raw}'. Valid values: ${KNOWN_HOST_IDS.join(', ')}.` };
+  }
+  const unknown = ids.filter((id) => !KNOWN_HOST_IDS.includes(id as HostId));
+  if (unknown.length > 0) {
+    return {
+      error: `unknown --host '${unknown.join(', ')}'. Valid values: ${KNOWN_HOST_IDS.join(', ')}.`,
+    };
+  }
+  return ids;
+}
+
+/**
+ * Which hosts `init` should write Layer 2 config for.
+ * `--host` is an escape hatch (comma-separated ok). Never crawls `$HOME`.
+ */
+export function resolveInitHostIds(
+  root: string,
+  hostOverride?: string,
+): {
+  ids: string[];
+  source: 'flag' | 'project' | 'process' | 'none';
+  error?: string;
+} {
+  if (hostOverride !== undefined) {
+    const parsed = parseHostOverride(hostOverride);
+    if ('error' in parsed) {
+      return { ids: [], source: 'flag', error: parsed.error };
+    }
+    return { ids: parsed, source: 'flag' };
+  }
+  const project = collectProjectHostIds(root);
+  if (project.length > 0) {
+    return { ids: project, source: 'project' };
+  }
+  const processId = detectProcessHostId();
+  if (processId !== undefined) {
+    return { ids: [processId], source: 'process' };
+  }
+  return { ids: [], source: 'none' };
+}
+
 export function detectHost(root: string): HostInfo {
   /* ---------------- Pass 1: project-local evidence ---------------- */
 
@@ -125,14 +249,7 @@ export function detectHost(root: string): HostInfo {
   }
 
   // Tier C: Aider (project-local config forms).
-  const aiderConfPatterns = ['aider', '.aider'];
-  const aiderMarkerExists = aiderConfPatterns.some(
-    (pattern) =>
-      existsSync(join(root, `${pattern}.conf.yml`)) ||
-      existsSync(join(root, `${pattern}.conf.yaml`)) ||
-      existsSync(join(root, `${pattern}.conf.json`)),
-  );
-  if (aiderMarkerExists) {
+  if (aiderMarkerExists(root)) {
     return {
       id: 'aider',
       name: 'Aider',
@@ -208,15 +325,7 @@ export function detectHost(root: string): HostInfo {
   // directory, so the honest marker is Copilot settings inside
   // .vscode/settings.json — a bare .vscode/ proves nothing, every VS Code
   // project has one.
-  const vscodeSettings = join(root, '.vscode', 'settings.json');
-  let copilotSettings = false;
-  try {
-    copilotSettings =
-      existsSync(vscodeSettings) && /copilot/i.test(readFileSync(vscodeSettings, 'utf8'));
-  } catch {
-    // Unreadable settings are not evidence of Copilot.
-  }
-  if (copilotSettings) {
+  if (copilotSettingsExist(root)) {
     return {
       id: 'copilot',
       name: 'GitHub Copilot',
@@ -238,7 +347,14 @@ export function detectHost(root: string): HostInfo {
   }
 
   /* ------------- Pass 2: environment / global-home evidence -------------
-   * Reached ONLY when the project carries no marker of its own.             */
+   * Reached ONLY when the project carries no marker of its own.
+   *
+   * Process env (CLAUDECODE, CURSOR_*, …) names the host running *this*
+   * command. `$HOME` markers are labeling only — never a reason for `init`
+   * to write files. `~/.codex/` is intentionally not treated as Codex (see
+   * tests): a global install is not this project. `~/.codeium/windsurf`,
+   * `~/.cline`, `~/.config/zed` lump to Generic Agent, not a named host.
+   * `~/.continue/config.yaml` alone is Unknown, matching Continue docs. */
 
   if (process.env.CLAUDECODE) {
     return {

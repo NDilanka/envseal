@@ -4,24 +4,43 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory config only |
-| **Files** | `config.yaml` |
+| **Files** | `config.yaml` (project snippet; global merge is manual) |
 
 Continue is a **Tier B** host: it speaks MCP (binding tier 1) but has no
 interception hooks, so a shell command that leaks a value still reaches the
 transcript. The config registers the broker; it does not police anything.
+MCP is **not OOTB** from `init` because Continue loads `~/.continue/config.yaml`
+and envseal does not write `$HOME`.
 
 ## Install
 
-1. **MCP server.** Merge the `mcpServers` block from `config.yaml` into
-   `~/.continue/config.yaml` (or `config.json` for the JSON config).
+```sh
+npm install -D @envseal/cli
+npx envseal init --host continue
+```
 
-   The `envseal-mcp` command must be on your `PATH` (it ships with
-   `@envseal/mcp-server`, a dependency of `@envseal/cli`). In a monorepo checkout
-   substitute `"command": "node"` + `"args": ["<abs>/packages/mcp-server/dist/bin.js"]`.
+1. **Layer 1.** `init` merges `AGENTS.md` so the agent can run `envseal ensure`
+   / `envseal run --` without MCP.
 
-2. **Restart** Continue so it re-reads the config and connects to the server.
+2. **MCP (manual).** Merge the `mcpServers` block from `config.yaml` into
+   `~/.continue/config.yaml`. `init` also writes a project `.continue/config.yaml`
+   (detection marker + the same snippet). POSIX:
 
-3. **Verify.** Run `envseal doctor` — it should report `Host: Continue (Tier B)`.
+   ```yaml
+   mcpServers:
+     - name: envseal-mcp
+       command: npx
+       args: ["-y", "@envseal/mcp-server"]
+   ```
+
+   On Windows use `npx.cmd`. Do not copy this into `$HOME` via envseal; merge
+   it yourself. `[VERIFY]` HUB schema vs `experimental.mcpServers`.
+
+3. **Restart** Continue so it re-reads the global config.
+
+4. **Verify.** `envseal doctor` reports `Host: Continue (Tier B)` from project
+   `.continue/`. `agentWiring.mcp` stays `missing` until the global merge
+   (not OOTB).
 
 ## Keychain recommendation (Tier B)
 

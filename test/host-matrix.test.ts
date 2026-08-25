@@ -124,7 +124,11 @@ const PROJECT_HOSTS: Array<{
       mkdirSync(join(root, '.vscode'));
       writeFileSync(
         join(root, '.vscode', 'settings.json'),
-        JSON.stringify({ 'github.copilot.mcp': [{ name: 'envseal-mcp', command: 'envseal-mcp' }] }),
+        JSON.stringify({
+          'github.copilot.mcp': [
+            { name: 'envseal-mcp', command: 'npx', args: ['-y', '@envseal/mcp-server'] },
+          ],
+        }),
       );
     },
   },
@@ -184,6 +188,16 @@ function extractMcpCommand(config: unknown): { command: string; args: unknown } 
     return extractMcpCommand(rec['github.copilot.mcp'][0]);
   }
   return null;
+}
+
+/** Project MCP launch: npx -y @envseal/mcp-server (npx.cmd on Windows), or the Claude plugin CJS. */
+function isShippedMcpLaunch(launch: { command: string; args: unknown }): boolean {
+  const cmd = launch.command.replace(/\.cmd$/i, '');
+  if (cmd === 'npx') {
+    const args = Array.isArray(launch.args) ? launch.args.map(String) : [];
+    return args.includes('-y') && args.includes('@envseal/mcp-server');
+  }
+  return launch.command === 'node' && JSON.stringify(launch.args).includes('envseal-mcp');
 }
 
 interface JsonRpcResponse {
@@ -321,11 +335,13 @@ describe('documented hosts have pages and detection', () => {
 });
 
 describe('shipped plugin configs', () => {
-  it('Cursor mcp.json launches envseal-mcp over stdio', () => {
+  it('Cursor mcp.json launches envseal-mcp over stdio via npx', () => {
     const cfg = JSON.parse(readFileSync(join(ROOT, 'plugins', 'cursor', 'mcp.json'), 'utf8')) as unknown;
     const launch = extractMcpCommand(cfg);
-    expect(launch?.command).toBe('envseal-mcp');
-    expect(launch?.args).toEqual([]);
+    expect(launch).not.toBeNull();
+    expect(isShippedMcpLaunch(launch!)).toBe(true);
+    expect(launch?.command).toBe('npx');
+    expect(launch?.args).toEqual(['-y', '@envseal/mcp-server']);
   });
 
   it('Claude plugin .mcp.json points at the bundled CJS (exists after plugin build)', () => {
@@ -343,7 +359,8 @@ describe('shipped plugin configs', () => {
   it('Continue config registers envseal-mcp', () => {
     const yaml = readFileSync(join(ROOT, 'plugins', 'continue', 'config.yaml'), 'utf8');
     expect(yaml).toMatch(/name:\s*envseal-mcp/);
-    expect(yaml).toMatch(/command:\s*envseal-mcp/);
+    expect(yaml).toMatch(/command:\s*npx/);
+    expect(yaml).toMatch(/@envseal\/mcp-server/);
   });
 
   it('Aider read-list never includes .env', () => {
@@ -373,7 +390,7 @@ describe('shipped plugin configs', () => {
 });
 
 describe('install snippets in docs/hosts', () => {
-  it('every JSON MCP snippet launches envseal-mcp (or node + bundled bin)', () => {
+  it('every JSON MCP snippet launches via npx @envseal/mcp-server (or node + bundled bin)', () => {
     const offenders: string[] = [];
     for (const file of readdirSync(HOST_DOCS)) {
       if (!file.endsWith('.md') || file === 'README.md') continue;
@@ -389,22 +406,22 @@ describe('install snippets in docs/hosts', () => {
         }
         const launch = extractMcpCommand(parsed);
         if (launch === null) continue;
-        const ok =
-          launch.command === 'envseal-mcp' ||
-          (launch.command === 'node' && JSON.stringify(launch.args).includes('envseal-mcp'));
-        if (!ok) offenders.push(`${file}: command=${launch.command}`);
+        if (!isShippedMcpLaunch(launch)) offenders.push(`${file}: command=${launch.command}`);
       }
     }
     expect(offenders).toEqual([]);
   });
 
-  it('toml/yaml host snippets name envseal-mcp', () => {
+  it('toml/yaml host snippets launch via npx @envseal/mcp-server', () => {
     const codex = readFileSync(join(HOST_DOCS, 'codex.md'), 'utf8');
-    expect(codex).toMatch(/command\s*=\s*"envseal-mcp"/);
+    expect(codex).toMatch(/command\s*=\s*"npx"/);
+    expect(codex).toMatch(/@envseal\/mcp-server/);
     const goose = readFileSync(join(HOST_DOCS, 'goose.md'), 'utf8');
-    expect(goose).toMatch(/cmd:\s*envseal-mcp/);
+    expect(goose).toMatch(/cmd:\s*npx/);
+    expect(goose).toMatch(/@envseal\/mcp-server/);
     const cont = readFileSync(join(HOST_DOCS, 'continue.md'), 'utf8');
-    expect(cont).toMatch(/command:\s*envseal-mcp/);
+    expect(cont).toMatch(/command:\s*npx/);
+    expect(cont).toMatch(/@envseal\/mcp-server/);
   });
 });
 

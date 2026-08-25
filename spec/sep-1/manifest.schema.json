@@ -36,7 +36,8 @@
             "type": "object",
             "properties": {
               "pattern": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "minLength": {
                 "type": "integer"

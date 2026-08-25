@@ -22,45 +22,9 @@ There is currently no standard mechanism for an agent to say *"I need a value I 
 
 The protocol splits the problem into four principals, each with a specific trust level:
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  MODEL  (untrusted for values)                                           │
-│    tools: env_describe · env_declare · env_request · env_await            │
-│           env_verify · env_use · env_revoke                              │
-└─────────────────────────────┬────────────────────────────────────────────┘
-                              │  MCP / JSON-RPC   (names, tickets, redacted status)
-                              │  ✗ never carries a secret value
-┌─────────────────────────────┴────────────────────────────────────────────┐
-│  HARNESS  (Claude Code / Codex / Cursor / Zed / Cline)                    │
-│    + hooks (Claude Code only):  PreToolUse guard · prompt redactor        │
-└─────────────────────────────┬────────────────────────────────────────────┘
-                              │  spawns (stdio)
-┌─────────────────────────────┴────────────────────────────────────────────┐
-│  BROKER  (trusted)                                                        │
-│  ┌────────────┐ ┌─────────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐ │
-│  │ Manifest   │ │ Ticket      │ │ Prompter │ │ Validator │ │ Redactor  │ │
-│  │ engine     │ │ store       │ │ registry │ │ + probes  │ │ (egress)  │ │
-│  └────────────┘ └─────────────┘ └────┬─────┘ └───────────┘ └───────────┘ │
-│  ┌──────────────────────────────┐    │        ┌──────────────────────┐   │
-│  │ Sink registry                │    │        │ Audit log (JSONL)    │   │
-│  │  dotenv · keychain* · sops†  │    │        │ names only, no values│   │
-│  │  1password†·doppler†·vault†  │    │        └──────────────────────┘   │
-│  └──────────────────────────────┘    │                                   │
-└──────────────────────────────────────┼───────────────────────────────────┘
-                                       │  ▲ the ONLY path a value travels
-              ┌────────────────────────┴──────────────────────────┐
-              │  PROMPTER ADAPTERS (secure input surfaces)         │
-              │   1. loopback-browser   (default, cross-platform)  │
-              │   2. native-dialog    (osascript/PowerShell/zenity)│
-              │   3. ide                (VS Code showInputBox)     │
-              │   4. tty                (direct /dev/tty, CONIN$)  │
-              │   5. none                (CI → hard fail)          │
-              └────────────────────────┬──────────────────────────┘
-                                       │
-                                     ┌──┴──┐
-                                     │USER │
-                                     └─────┘
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="envseal architecture: the model declares what it needs; secrets travel only from you through secure local input into the broker's sinks — never through the model." width="100%">
+</p>
 
 `*` keychain stores AND resolves values today (Windows DPAPI blob, macOS `security`, Linux `secret-tool`). `†` vault, 1Password, Doppler, and SOPS are implemented too — each delegates to its provider CLI (`vault`, `op`, `doppler`, `sops`), so a sink reports itself unavailable until that CLI is installed and authenticated. `dotenv`, `keychain`, and all four provider sinks both store and resolve values.
 

@@ -425,21 +425,31 @@ manifest; a missing log prints "No audit events recorded." and exits 0.
 |---|---|
 | *(none)* | Human-readable event lines in log order |
 | `--json` | The parsed event array as a single JSON array |
-| `--verify` | Check the tamper-evidence hash chain instead of listing events |
+| `--verify` | Check the tamper-evidence hash chain, and the out-of-band mirror when present, instead of listing events |
 
-With `--json --verify`, stdout is one JSON object: `{ok: true, count: N}` when
-intact, `{ok: false, brokenAt: K, count: N}` otherwise.
+With `--json --verify`, stdout is one JSON object: `{ok: true, count: N, mirror: {present, records}}`
+when intact, `{ok: false, brokenAt: K, count: N, mirror: {present, records}}` otherwise.
 
 **Exit codes:**
 - 0 — chain intact (or no log: intact with zero records)
 - 7 — `AUDIT_CHAIN_FAILED`: records were edited, deleted, reordered, or
   spliced after the fact. Every record after the break is untrusted.
+- 7 — also when verify reports `AUDIT TAIL LOST`: the log's out-of-band
+  mirror proves records existed beyond the surviving tail.
 
-**Honest boundary:** the chain proves surviving records are intact and
-ordered; it cannot detect deletion of the log *tail*, because nothing outside
-the log records how many records should exist. An agent that can run
-arbitrary shell can also delete the whole file — this is tamper *evidence*,
-not immutability (see docs/residual-risks.md).
+**Honest boundary:** the chain alone proves surviving records are intact and
+ordered; it cannot detect deletion of the log *tail*, because nothing in the
+log records how many records should exist. envseal closes most of that gap
+with an out-of-band mirror: every record appended to `.envseal/audit.jsonl`
+is also streamed to `~/.envseal/mirrors/<sha256(project root)>.jsonl`
+(default on; `ENVSEAL_AUDIT_MIRROR=0` opts out, a path value redirects it —
+point it at a synced folder to also get records off the machine). `--verify`
+compares log against mirror with a chain-anchored check and fails with
+`AUDIT TAIL LOST` when the mirror attests records the log no longer holds;
+a legitimate full log reset does not false-positive. The mirror write is
+best-effort (one stderr warning on failure, provisioning never blocks) and
+still only raises the bar — a same-uid attacker can tamper both copies, so
+this is tamper *evidence*, not immutability (see docs/residual-risks.md §10).
 
 ---
 

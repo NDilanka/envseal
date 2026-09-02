@@ -155,10 +155,12 @@ describe('audit hash chain', () => {
 
     it('still verifies ok when the tail is truncated (documented boundary)', () => {
       // Honest boundary: the chain proves the records that survive are intact
-      // and in order. Nothing outside the log records how many records should
+      // and in order. Nothing IN the log records how many records should
       // exist, so a deleted TAIL is indistinguishable from history that never
-      // happened. verifyAuditChain must say ok here rather than pretend it can
-      // detect something no head pointer was ever kept for.
+      // happened — to verifyAuditChain itself. The out-of-band mirror
+      // (compareWithMirror, audit.test.ts) is the layer that closes this:
+      // envseal audit --verify fails with AUDIT TAIL LOST when the mirror
+      // chains onto the surviving tail.
       const paths = projectPaths(tmpDir);
       appendAudit(paths, { type: 'declare', keys: ['KEY1'] });
       appendAudit(paths, { type: 'declare', keys: ['KEY2'] });

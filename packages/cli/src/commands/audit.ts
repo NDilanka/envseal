@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { projectPaths, readAudit, verifyAuditChain } from '@envseal/core';
+import { compareWithMirror, projectPaths, readAudit, readMirrorLines, verifyAuditChain } from '@envseal/core';
 import type { AuditEvent } from '@envseal/core';
 import { EXIT } from '../exit-codes.js';
 import { finish } from '../exit.js';
@@ -13,6 +13,11 @@ import { finish } from '../exit.js';
  * (AUDIT_CHAIN_FAILED) when the chain is broken. A missing log verifies as
  * intact with zero records — there is nothing to attest, and "no log yet"
  * must not look like tampering.
+ *
+ * When the project's out-of-band mirror (~/.envseal/mirrors/) exists, verify
+ * also compares the log against it: the mirror is a second copy the project's
+ * agent cannot silently shrink, so records the mirror proves existed but the
+ * log lost are tail truncation — exit 7. See docs/residual-risks.md §10.
  */
 export async function audit(root: string, json: boolean, verifyMode: boolean): Promise<void> {
   if (!verifyMode) {
@@ -51,32 +56,54 @@ export async function audit(root: string, json: boolean, verifyMode: boolean): P
   }
 
   const result = verifyAuditChain(raw);
+  const mirror = compareWithMirror(raw, readMirrorLines(root));
+  const ok = result.ok && !mirror.tailTruncated;
 
   if (json) {
     console.log(
       JSON.stringify(
-        result.ok
-          ? { ok: true, count: result.count }
-          : { ok: false, brokenAt: result.brokenAt ?? null, count: result.count },
+        !ok
+          ? {
+              ok: false,
+              brokenAt: result.ok ? null : (result.brokenAt ?? null),
+              count: result.count,
+              mirror: { present: mirror.mirrorPresent, records: mirror.mirrorRecords },
+            }
+          : { ok: true, count: result.count, mirror: { present: mirror.mirrorPresent, records: mirror.mirrorRecords } },
         null,
         0,
       ),
     );
-    finish(result.ok ? EXIT.OK : EXIT.AUDIT_CHAIN_FAILED);
+    finish(ok ? EXIT.OK : EXIT.AUDIT_CHAIN_FAILED);
     return;
   }
 
-  if (result.ok) {
-    console.log(`Audit chain intact (${result.count} record${result.count === 1 ? '' : 's'}).`);
-    finish(EXIT.OK);
+  if (!ok) {
+    if (!result.ok) {
+      console.error(
+        `AUDIT CHAIN FAILED: first break at record ${result.brokenAt} of ${result.count}. ` +
+          'Records were edited, deleted, reordered, or spliced after the fact. ' +
+          'Treat every record after the break as untrusted and investigate the host.',
+      );
+    } else {
+      console.error(
+        `AUDIT TAIL LOST: the project log holds ${mirror.projectRecords} record(s) but its out-of-band mirror ` +
+          `attests ${mirror.mirrorRecords}. Records after the surviving tail were deleted after being mirrored. ` +
+          'Treat the log as incomplete and investigate the host (docs/residual-risks.md §10).',
+      );
+    }
+    finish(EXIT.AUDIT_CHAIN_FAILED);
     return;
   }
-  console.error(
-    `AUDIT CHAIN FAILED: first break at record ${result.brokenAt} of ${result.count}. ` +
-      'Records were edited, deleted, reordered, or spliced after the fact. ' +
-      'Treat every record after the break as untrusted and investigate the host.',
-  );
-  finish(EXIT.AUDIT_CHAIN_FAILED);
+  if (mirror.mirrorPresent && mirror.mirrorRecords > mirror.projectRecords) {
+    console.log(
+      `Audit chain intact (${result.count} record${result.count === 1 ? '' : 's'}); mirror holds ` +
+        `${mirror.mirrorRecords} — pre-reset history, not tampering.`,
+    );
+  } else {
+    console.log(`Audit chain intact (${result.count} record${result.count === 1 ? '' : 's'}).`);
+  }
+  finish(EXIT.OK);
 }
 
 function formatEvent(e: AuditEvent & { at: string }): string {

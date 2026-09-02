@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, readFileSync, existsSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { projectPaths } from '../src/paths.js';
-import { appendAudit, readAudit, type AuditEvent } from '../src/audit.js';
+import {
+  appendAudit,
+  readAudit,
+  auditMirrorPath,
+  readMirrorLines,
+  compareWithMirror,
+  verifyAuditChain,
+  type AuditEvent,
+} from '../src/audit.js';
 
 describe('audit', () => {
   let tmpDir: string;
@@ -210,6 +218,116 @@ describe('audit', () => {
       for (let i = 0; i < events.length; i++) {
         expect(records[i]?.type).toBe(events[i]?.type);
       }
+    });
+  });
+
+  describe('out-of-band mirror', () => {
+    let mirrorDir: string;
+    let previousSetting: string | undefined;
+
+    beforeEach(() => {
+      mirrorDir = join(mkdtempSync(join(tmpdir(), 'envseal-mirror-')), 'mirrors');
+      previousSetting = process.env.ENVSEAL_AUDIT_MIRROR;
+      process.env.ENVSEAL_AUDIT_MIRROR = mirrorDir;
+    });
+
+    afterEach(() => {
+      if (previousSetting === undefined) {
+        delete process.env.ENVSEAL_AUDIT_MIRROR;
+      } else {
+        process.env.ENVSEAL_AUDIT_MIRROR = previousSetting;
+      }
+      rmSync(join(mirrorDir, '..'), { recursive: true, force: true });
+    });
+
+    function mirrorLines(): string[] {
+      const raw = readFileSync(auditMirrorPath(tmpDir), 'utf8');
+      return raw.split(/\r?\n/).filter((line) => line.length > 0);
+    }
+
+    function projectLines(): string[] {
+      const raw = readFileSync(projectPaths(tmpDir).audit, 'utf8');
+      return raw.split(/\r?\n/).filter((line) => line.length > 0);
+    }
+
+    it('receives the same records the project log receives', () => {
+      const paths = projectPaths(tmpDir);
+      appendAudit(paths, { type: 'declare', keys: ['KEY1'] });
+      appendAudit(paths, { type: 'revoke', key: 'KEY1', sink: 'dotenv' });
+
+      expect(mirrorLines()).toEqual(projectLines());
+      expect(verifyAuditChain(readFileSync(auditMirrorPath(tmpDir), 'utf8')).ok).toBe(true);
+    });
+
+    it('is skipped entirely when ENVSEAL_AUDIT_MIRROR=0', () => {
+      process.env.ENVSEAL_AUDIT_MIRROR = '0';
+      const paths = projectPaths(tmpDir);
+      appendAudit(paths, { type: 'declare', keys: ['KEY1'] });
+
+      expect(existsSync(auditMirrorPath(tmpDir))).toBe(false);
+    });
+
+    it('never throws or blocks provisioning when the mirror is unwritable', () => {
+      const blocker = join(mkdtempSync(join(tmpdir(), 'envseal-mirror-block-')), 'blocker');
+      writeFileSync(blocker, 'a file where the directory should be');
+      process.env.ENVSEAL_AUDIT_MIRROR = join(blocker, 'mirrors');
+
+      const paths = projectPaths(tmpDir);
+      expect(() => appendAudit(paths, { type: 'declare', keys: ['KEY1'] })).not.toThrow();
+      expect(readAudit(paths)).toHaveLength(1);
+    });
+
+    it('flags tail truncation when the mirror chains onto the surviving tail', () => {
+      const paths = projectPaths(tmpDir);
+      for (let i = 0; i < 3; i++) {
+        appendAudit(paths, { type: 'declare', keys: [`KEY${i}`] });
+      }
+      const lines = projectLines();
+      // Agent trims the last two records off the project log.
+      writeFileSync(paths.audit, `${lines[0]}\n`);
+
+      const comparison = compareWithMirror(readFileSync(paths.audit, 'utf8'), readMirrorLines(tmpDir));
+      expect(comparison.mirrorPresent).toBe(true);
+      expect(comparison.tailTruncated).toBe(true);
+    });
+
+    it('does not flag a legitimate full log reset as truncation', () => {
+      const paths = projectPaths(tmpDir);
+      for (let i = 0; i < 3; i++) {
+        appendAudit(paths, { type: 'declare', keys: [`OLD${i}`] });
+      }
+      // Full reset: the log is deleted and provisioning restarts from genesis.
+      rmSync(paths.audit);
+      appendAudit(paths, { type: 'declare', keys: ['NEW0'] });
+      appendAudit(paths, { type: 'declare', keys: ['NEW1'] });
+
+      const comparison = compareWithMirror(readFileSync(paths.audit, 'utf8'), readMirrorLines(tmpDir));
+      expect(comparison.tailTruncated).toBe(false);
+    });
+
+    it('flags a fully deleted log when the mirror still holds records', () => {
+      const paths = projectPaths(tmpDir);
+      appendAudit(paths, { type: 'declare', keys: ['KEY1'] });
+      rmSync(paths.audit);
+
+      const comparison = compareWithMirror('', readMirrorLines(tmpDir));
+      expect(comparison.tailTruncated).toBe(true);
+    });
+
+    it('reports an absent mirror as not present and not truncated', () => {
+      const comparison = compareWithMirror('{"type":"declare","seq":1}\n', readMirrorLines(tmpDir));
+      expect(comparison.mirrorPresent).toBe(false);
+      expect(comparison.tailTruncated).toBe(false);
+    });
+
+    it('mirror survives foreign corrupt lines without losing the chain check', () => {
+      const paths = projectPaths(tmpDir);
+      appendAudit(paths, { type: 'declare', keys: ['KEY1'] });
+      appendFileSync(auditMirrorPath(tmpDir), 'not json\n');
+
+      const comparison = compareWithMirror(readFileSync(paths.audit, 'utf8'), readMirrorLines(tmpDir));
+      expect(comparison.mirrorRecords).toBe(1);
+      expect(comparison.tailTruncated).toBe(false);
     });
   });
 });

@@ -1,6 +1,6 @@
-import { findProjectRoot, loadManifest, projectPaths } from '@envseal/core';
+import { findProjectRoot, HOOK_HEARTBEAT_FILE, loadManifest, projectPaths } from '@envseal/core';
 import { detect } from '@envseal/detector';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { readPayload, writeResult } from './lib.js';
 
@@ -1185,6 +1185,43 @@ export function toHookOutput(decision: Decision): PreToolUseHookOutput {
   };
 }
 
+// --- Liveness heartbeat (residual risk §11) ---------------------------------
+//
+// "doctor reports whether hook wiring is present; it cannot prove the hook
+// ran on the last call." The heartbeat is the observational half of that: a
+// timestamp file under .envseal/ that run() refreshes after every decision,
+// so `envseal doctor` can report WHEN the hook last executed. It is
+// deliberately NOT an audit record (one per tool call would flood the chain)
+// and NOT a gate: any failure here is swallowed, because a heartbeat that
+// could affect the decision would violate the fail-open contract.
+
+export const HOOK_HEARTBEAT_STALE_MS = 60_000;
+
+/** Refresh `.envseal/hook-heartbeat` with the current ISO timestamp, but at
+ *  most once per staleness window — one stat per tool call, one small write
+ *  per minute. Never throws; never touches the decision. */
+export function touchHookHeartbeat(root: string, now: Date = new Date()): void {
+  try {
+    const stateDir = join(root, '.envseal');
+    const marker = join(stateDir, HOOK_HEARTBEAT_FILE);
+    try {
+      // Staleness reads the recorded CONTENT, not the file mtime: the
+      // timestamp is what the heartbeat means, and mtime is fragile under
+      // clock skew between this call and the last write.
+      const previous = Date.parse(readFileSync(marker, 'utf8').trim());
+      if (!Number.isNaN(previous) && now.getTime() - previous < HOOK_HEARTBEAT_STALE_MS) {
+        return;
+      }
+    } catch {
+      // Missing or unreadable marker: fall through and write it.
+    }
+    mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+    writeFileSync(marker, `${now.toISOString()}\n`, { mode: 0o600 });
+  } catch {
+    // Observational only — an unwritable heartbeat changes nothing.
+  }
+}
+
 /**
  * stdin/stdout/stderr plumbing for run(), injectable so unit tests can drive
  * the hook end-to-end (malformed payload included) without spawning a process.
@@ -1210,6 +1247,9 @@ export function run(io: RunIo = DEFAULT_IO): Promise<void> {
       const root = typeof p.cwd === 'string' ? p.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
       const decision = decide(call, { declaredSecrets, cwd: root });
+      // After the decision, never before: the heartbeat is observational and
+      // must not sit on the path that produces it.
+      touchHookHeartbeat(findProjectRoot(root));
       return toHookOutput(decision);
     })
     .then((result) => {

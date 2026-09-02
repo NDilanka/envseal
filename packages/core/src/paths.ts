@@ -99,3 +99,23 @@ export function loadOrCreateSalt(paths: ProjectPaths): Buffer {
   if (isPosix) chmodSync(paths.salt, 0o600);
   return salt;
 }
+
+// --- Hook liveness heartbeat ------------------------------------------------
+//
+// The Claude Code PreToolUse hook refreshes this marker after every decision
+// (at most once per minute), purely so `envseal doctor` can report WHEN the
+// hook last ran instead of only whether its wiring exists. It is
+// observational: never a gate, never an audit record. The marker name lives
+// here so the writer (plugin) and the reader (doctor) cannot drift.
+
+export const HOOK_HEARTBEAT_FILE = 'hook-heartbeat';
+
+/** ISO timestamp of the hook's last observed run for a project, or null. */
+export function readHookHeartbeat(root: string): string | null {
+  try {
+    const raw = readFileSync(join(resolve(root), '.envseal', HOOK_HEARTBEAT_FILE), 'utf8').trim();
+    return raw === '' ? null : raw;
+  } catch {
+    return null;
+  }
+}

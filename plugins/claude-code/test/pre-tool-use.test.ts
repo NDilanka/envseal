@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -16,6 +16,7 @@ import {
   internalErrorDecision,
   run,
   toHookOutput,
+  touchHookHeartbeat,
   analyzeShellNesting,
   MAX_PAYLOAD_DEPTH,
   stripEnvInvocationPrefix,
@@ -305,7 +306,6 @@ describe('pre-tool-use hook', () => {
       const decision = decide({ tool: 'Read', path: 'env.schema.jsonc' });
       expect(decision.allow).toBe(true);
     });
-
     it('allows Read src/index.ts', () => {
       const decision = decide({ tool: 'Read', path: 'src/index.ts' });
       expect(decision.allow).toBe(true);
@@ -1084,6 +1084,60 @@ describe('pre-tool-use hook', () => {
         const decision = decide({ tool: 'Glob', pattern });
         expect(decision.allow, `Glob ${pattern}: ${decision.reason ?? ''}`).toBe(true);
       }
+    });
+  });
+
+  describe('hook liveness heartbeat', () => {
+    let tmp: string;
+
+    beforeEach(() => {
+      tmp = mkdtempSync(join(tmpdir(), 'envseal-heartbeat-'));
+    });
+
+    afterEach(() => {
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it('records an ISO timestamp under .envseal on first run', () => {
+      const now = new Date('2026-09-02T12:00:00.000Z');
+      touchHookHeartbeat(tmp, now);
+
+      const raw = readFileSync(join(tmp, '.envseal', 'hook-heartbeat'), 'utf8').trim();
+      expect(raw).toBe('2026-09-02T12:00:00.000Z');
+    });
+
+    it('does not rewrite inside the staleness window', () => {
+      const first = new Date('2026-09-02T12:00:00.000Z');
+      touchHookHeartbeat(tmp, first);
+      touchHookHeartbeat(tmp, new Date(first.getTime() + 30_000));
+
+      const raw = readFileSync(join(tmp, '.envseal', 'hook-heartbeat'), 'utf8').trim();
+      expect(raw).toBe('2026-09-02T12:00:00.000Z');
+    });
+
+    it('rewrites once the window has passed', () => {
+      const first = new Date('2026-09-02T12:00:00.000Z');
+      touchHookHeartbeat(tmp, first);
+      const second = new Date(first.getTime() + 61_000);
+      touchHookHeartbeat(tmp, second);
+
+      const raw = readFileSync(join(tmp, '.envseal', 'hook-heartbeat'), 'utf8').trim();
+      expect(raw).toBe(second.toISOString());
+    });
+
+    it('run() records the heartbeat for the payload project', async () => {
+      const written: unknown[] = [];
+      await run({
+        read: () => Promise.resolve({ tool: 'Read', path: 'src/index.ts', cwd: tmp }),
+        write: (result: unknown) => {
+          written.push(result);
+        },
+        error: () => {},
+      });
+
+      expect(written).toHaveLength(1);
+      const raw = readFileSync(join(tmp, '.envseal', 'hook-heartbeat'), 'utf8').trim();
+      expect(() => Date.parse(raw)).not.toThrow();
     });
   });
 });

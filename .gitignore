@@ -15,3 +15,8 @@ coverage/
 # build/test byproduct, never source, and its presence in `git status` used to
 # abort the real publish leg with "working tree is dirty".
 packages/core/index.html
+
+# agent-validator ("gauntlet") loop state and logs — local-only, never committed
+.validator/
+validator_logs/
+.githooks/

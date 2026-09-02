@@ -16,6 +16,9 @@
     "test:zero-leak": "pnpm --filter @envseal/mcp-server test -- zero-leak",
     "lint": "eslint .",
     "clean": "pnpm -r exec rm -rf dist tsconfig.tsbuildinfo",
+    "gauntlet": "agent-validate run",
+    "gauntlet:skip": "agent-validate skip",
+    "gauntlet:install": "node scripts/install-gauntlet-hook.mjs",
     "release": "node scripts/release.mjs",
     "release:dry": "node scripts/release.mjs --dry-run"
   },

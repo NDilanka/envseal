@@ -14,7 +14,7 @@
     "test": "pnpm -r test && pnpm test:portability",
     "test:portability": "vitest run --config vitest.config.ts",
     "test:zero-leak": "pnpm --filter @envseal/mcp-server test -- zero-leak",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "clean": "pnpm -r exec rm -rf dist tsconfig.tsbuildinfo",
     "gauntlet": "agent-validate run",
     "gauntlet:skip": "agent-validate skip",

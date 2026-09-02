@@ -1,6 +1,6 @@
 import { findProjectRoot, HOOK_HEARTBEAT_FILE, loadManifest, projectPaths } from '@envseal/core';
 import { detect } from '@envseal/detector';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { readPayload, writeResult } from './lib.js';
 

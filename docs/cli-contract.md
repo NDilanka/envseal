@@ -162,6 +162,17 @@ run` resolves it like any other sink. If a credential store errors while being
 read (locked keychain, DPAPI failure), presence degrades to `present: false`
 rather than failing the report.
 
+When the manifest declares `rotation: { maxAgeDays }` for an entry, the JSON
+adds `rotationDue` (ISO date the stored value's age exceeds the policy; `null`
+without a policy or before the first status stamps the age). The human listing
+marks only *overdue* keys — a future due date is noise there:
+
+```
+✓ OPENAI_API_KEY
+✗ DATABASE_URL
+✓ STRIPE_SECRET_KEY (rotation overdue, due 2026-08-14, 20d ago)
+```
+
 **Arguments:**
 - `KEY` (optional, repeatable) — Show status only for these keys. Without arguments, show all.
 
@@ -188,7 +199,8 @@ rather than failing the report.
       "lengthBucket": "48-64",
       "fingerprint": "fp_9a4c1e7b",
       "lastVerified": "2026-08-07T09:12:00Z",
-      "verifyResult": "ok"
+      "verifyResult": "ok",
+      "rotationDue": null
     }
   ]
 }
@@ -287,13 +299,25 @@ envseal run -- npm test
 
 ### `envseal doctor`
 
-Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, count of missing required keys.
+Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, `hookLastRan` (hook liveness), rotation advisories, count of missing required keys.
 
 Folder presence is not wiring. For the detected **primary** host, doctor checks the project config `init` would have written. An empty `.cursor/mcp.json` `mcpServers` map is unwired (exit 1). Continue and Goose are **not OOTB** (print-only MCP).
 
 With no `env.schema.jsonc` in the project there is nothing to audit: `doctor`
 fails with `SEP_NOT_DECLARED` and exit 2 (same as `ensure`) instead of printing
 an empty bill of health.
+
+**Hook liveness.** `hookLastRan` is the ISO timestamp the Claude Code PreToolUse
+hook records (at most once per minute) in `.envseal/hook-heartbeat` after every
+decision. It is observational: `null` means the hook has never run for this
+project (or the plugin predates the heartbeat), and a fresh timestamp proves
+liveness, not correctness. Human output prints it as a relative age.
+
+**Rotation advisories.** When the manifest declares `rotation: { maxAgeDays }`
+for an entry, doctor lists keys whose stored value has aged past the policy.
+Advisory only — an overdue rotation never changes the exit code; rotate the
+credential at the provider, rewrite the value (`envseal set`), and the age
+re-stamps when the fingerprint changes.
 
 **Flags:**
 - `--json` — Output as JSON.
@@ -310,8 +334,11 @@ Agent wiring: MCP ok, instructions ok
 Gitignore covers .env: yes
 Egress policy: warn (default)
 Hook on internal error: fail-open (default)
+Hook heartbeat: 42s ago
 Missing required keys: 1
   - OPENAI_API_KEY
+Rotation overdue (advisory — rotate the credential, then rewrite the value):
+  - STRIPE_API_KEY: due 2026-08-14
 ```
 
 `Egress policy:` reads `allowlist (N allowed hosts)` when the manifest sets
@@ -347,8 +374,10 @@ Missing required keys: 1
   },
   "egressPolicy": { "mode": "warn", "allow": [] },
   "hookFailClosed": false,
+  "hookLastRan": "2026-09-03T08:41:12.000Z",
   "missingRequiredCount": 1,
-  "missingRequired": ["OPENAI_API_KEY"]
+  "missingRequired": ["OPENAI_API_KEY"],
+  "rotationOverdue": [{ "key": "STRIPE_API_KEY", "due": "2026-08-14T00:00:00.000Z" }]
 }
 ```
 

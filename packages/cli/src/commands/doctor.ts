@@ -39,11 +39,20 @@ export async function doctor(root: string, json: boolean): Promise<void> {
     const gitignoreCovers = gitSafety.ignored;
     const hookFailClosed = process.env.ENVSEAL_HOOK_FAIL_CLOSED === '1';
 
-    // Check .env permissions
-    let envFileOk = false;
+    // Check .env permissions.
+    //
+    // POSIX mode bits are only enforced on POSIX. Windows statSync still
+    // reports a mode (0o666 writable, 0o444 read-only), so the group/other
+    // test would produce 0o066 ≠ 0 and report permissionsOk:false on EVERY
+    // Windows machine regardless of the real ACLs — a permanent false alarm.
+    // Report null ("not measurable here") instead; access on Windows is an
+    // ACL question this check cannot answer.
+    let envFileOk: boolean | null = null;
     if (existsSync(envPath)) {
-      const stats = statSync(envPath);
-      envFileOk = (stats.mode & 0o077) === 0;
+      if (process.platform !== 'win32') {
+        const stats = statSync(envPath);
+        envFileOk = (stats.mode & 0o077) === 0;
+      }
     }
 
     const host = detectHost(root);

@@ -386,6 +386,11 @@ Rotation overdue (advisory — rotate the credential, then rewrite the value):
 `mcp: { wired, status, message, commandOk }`. `message` tells the caller to run
 `envseal init` (or the exact JSON to merge); it never says to copy from `plugins/`.
 
+`envFile.permissionsOk` is `null` on Windows: Node's statSync reports nominal
+POSIX mode bits there that no ACL enforces, so the group/other-bits test would
+be a permanent false alarm. On POSIX it is the real `(mode & 0o077) === 0`
+check, and `null` also means `.env` does not exist.
+
 **Exit codes:**
 - 0 — All checks passed; no missing required keys; primary-host MCP wired when required; Layer 1 instructions present.
 - 1 — One or more required keys are missing, or the agent is unwired (MCP missing/spawn_failed, missing `AGENTS.md` imperative, or Aider `read:` lists `.env`).

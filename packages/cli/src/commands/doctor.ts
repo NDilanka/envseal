@@ -75,6 +75,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       hookLastRan,
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
+      rotationOverdue: status.entries
+        .filter((e) => isOverdue(e.rotationDue))
+        .map((e) => ({ key: e.key, due: e.rotationDue })),
       ...(inspection.mcp === undefined
         ? {}
         : {
@@ -113,6 +116,16 @@ export async function doctor(root: string, json: boolean): Promise<void> {
           console.log(`  - ${key}`);
         }
       }
+      const overdue = status.entries.filter(
+        (e): e is typeof e & { rotationDue: string } =>
+          e.rotationDue !== null && isOverdue(e.rotationDue),
+      );
+      if (overdue.length > 0) {
+        console.log('Rotation overdue (advisory — rotate the credential, then rewrite the value):');
+        for (const e of overdue) {
+          console.log(`  - ${e.key}: due ${e.rotationDue.slice(0, 10)}`);
+        }
+      }
     } else {
       emit(json, '', output);
     }
@@ -126,13 +139,21 @@ export async function doctor(root: string, json: boolean): Promise<void> {
   }
 }
 
+/** Advisory by design: overdue rotation never fails doctor the way a
+ * missing required key does, because an aged-but-working credential is a
+ * hygiene problem, not an outage. */
+function isOverdue(rotationDue: string | null): boolean {
+  if (rotationDue === null) return false;
+  const due = Date.parse(rotationDue);
+  return !Number.isNaN(due) && due <= Date.now();
+}
+
 /**
  * Human phrasing for the hook heartbeat. Advisory only — wiring can be
  * present while the hook has never run (no plugin version, no tool call yet),
  * and a recent timestamp proves liveness, not correctness.
  */
-function describeHeartbeatAge(hookLastRan: string | null): string {
-  if (hookLastRan === null) {
+function describeHeartbeatAge(hookLastRan: string | null): string {  if (hookLastRan === null) {
     return 'none recorded (hook has not run for this project, or pre-heartbeat plugin)';
   }
   const then = Date.parse(hookLastRan);

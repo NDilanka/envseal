@@ -25,7 +25,8 @@ export async function status(
       } else {
         for (const entry of entriesToShow) {
           const status_str = entry.present ? '✓' : '✗';
-          console.log(`${status_str} ${entry.key}`);
+          const due = describeRotation(entry.rotationDue);
+          console.log(`${status_str} ${entry.key}${due}`);
         }
       }
     } else {
@@ -39,6 +40,7 @@ export async function status(
           fingerprint: e.fingerprint,
           lastVerified: e.lastVerified,
           verifyResult: e.verifyResult,
+          rotationDue: e.rotationDue,
         })),
       });
     }
@@ -51,4 +53,19 @@ export async function status(
   } catch (error) {
     fail(json, error);
   }
+}
+
+/**
+ * Overdue rotation is the only state worth a human's glance in the terse
+ * listing; a future due date is noise. Absent policy or unknown age (hand
+ * written .env before first status) reports nothing.
+ */
+function describeRotation(rotationDue: string | null): string {
+  if (rotationDue === null) return '';
+  const due = Date.parse(rotationDue);
+  if (Number.isNaN(due)) return '';
+  if (due > Date.now()) return '';
+  const days = Math.floor((Date.now() - due) / (24 * 60 * 60 * 1000));
+  const when = days === 0 ? 'today' : `${days}d ago`;
+  return ` (rotation overdue, due ${rotationDue.slice(0, 10)}, ${when})`;
 }

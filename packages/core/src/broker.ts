@@ -34,6 +34,7 @@ import { runWithSecrets } from './exec.js';
 import type { ExecOptions } from './exec.js';
 import { getSink } from './sinks/registry.js';
 import { getValidation, recordValidation } from './validation-state.js';
+import { loadRotationState, recordRotation } from './rotation-state.js';
 import { scanText, secretInRequestError } from './guard.js';
 
 
@@ -109,6 +110,11 @@ export class Broker {
     const entries: KeyStatus[] = [];
     const missingRequired: string[] = [];
 
+    // Age markers for rotation reporting, loaded once and stamped lazily here:
+    // hand-written .env values never cross an envseal write path, so first
+    // sight in describe() is the only hook that sees every stored value.
+    const rotationState = loadRotationState(this.paths);
+
     for (const entry of manifest.entries) {
       const presenceInfo = presence.get(entry.key);
       const present = presenceInfo?.present ?? false;
@@ -138,6 +144,24 @@ export class Broker {
         }
       }
 
+      // rotationDue = first observation of THESE bytes + the declared
+      // maxAgeDays. Absent policy, absent value, or unknown age all report
+      // null: "no advice" must stay distinguishable from "overdue".
+      let rotationDue: string | null = null;
+      if (present && value) {
+        const maxAgeDays = entry.rotation?.maxAgeDays;
+        let ageRecord = rotationState[entry.key];
+        if (!ageRecord || ageRecord.fingerprint !== fingerprint) {
+          ageRecord = recordRotation(this.paths, entry.key, fingerprint);
+          rotationState[entry.key] = ageRecord;
+        }
+        if (maxAgeDays !== undefined) {
+          rotationDue = new Date(
+            Date.parse(ageRecord.at) + maxAgeDays * 24 * 60 * 60 * 1000,
+          ).toISOString();
+        }
+      }
+
       const status: KeyStatus = {
         key: entry.key,
         declared: true,
@@ -149,7 +173,7 @@ export class Broker {
         lastVerified: null,
         verifyResult: null,
         source: 'user-prompt',
-        rotationDue: null,
+        rotationDue,
       };
 
       entries.push(status);

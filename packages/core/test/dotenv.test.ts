@@ -249,6 +249,27 @@ describe('dotenv', () => {
       }
     });
 
+    it('gitignores the sibling staging temp when .envseal/ is unusable (F-W7-3)', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-stage-'));
+      try {
+        writeFileSync(join(bareDir, '.gitignore'), '.env\n');
+        writeFileSync(join(bareDir, '.envseal'), 'not a directory\n');
+        const paths = projectPaths(bareDir);
+
+        setDotenvValue(paths, 'KEY', 'value');
+        expect(readFileSync(paths.dotenv, 'utf8')).toContain('KEY=value');
+
+        const ignored = readFileSync(join(bareDir, '.gitignore'), 'utf8');
+        expect(ignored).toContain('..env.*.tmp');
+
+        setDotenvValue(paths, 'KEY', 'value2');
+        const after = readFileSync(join(bareDir, '.gitignore'), 'utf8');
+        expect(after.match(/\.\.env\.\*\.tmp/g)).toHaveLength(1);
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
+    });
+
     it('inspectDotenvGitSafety reports non-git dirs without throwing', () => {
       const bareDir = mkdtempSync(join(tmpdir(), 'envseal-inspect-'));
       try {

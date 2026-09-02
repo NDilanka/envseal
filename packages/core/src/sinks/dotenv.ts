@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   closeSync,
   fsyncSync,
   openSync,
@@ -247,6 +248,7 @@ function atomicWrite(paths: ProjectPaths, target: string, content: string): void
     ensureStateDir(paths);
     writeTempFile(tmp, content);
   } catch {
+    ensureSiblingTempIgnored(dirname(target));
     tmp = sibling;
     writeTempFile(tmp, content);
   }
@@ -254,6 +256,7 @@ function atomicWrite(paths: ProjectPaths, target: string, content: string): void
     renameOverwrite(tmp, target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+    ensureSiblingTempIgnored(dirname(target));
     writeTempFile(sibling, content);
     renameOverwrite(sibling, target);
   }
@@ -272,6 +275,45 @@ function renameOverwrite(tmp: string, target: string): void {
       // best effort: leaving a stray tmp file is preferable to masking the error
     }
     throw error;
+  }
+}
+
+const SIBLING_TEMP_IGNORE = '..env.*.tmp';
+let siblingIgnoreWarned = false;
+
+/**
+ * F-W7-3 residual hardening: a sibling staging temp holds the complete
+ * plaintext next to `.env`, and a `.env` gitignore entry does not match the
+ * name. Best-effort make the project `.gitignore` carry the pattern so a
+ * crash in exactly that window cannot leave the file stageable by an
+ * accidental `git add -A`. Append-once, never throws; a failure warns once
+ * on stderr with no path or error detail (either could carry secret-shaped
+ * text, same discipline as the audit mirror).
+ */
+function ensureSiblingTempIgnored(dir: string): void {
+  try {
+    const gitignorePath = join(dir, '.gitignore');
+    let lines: string[] = [];
+    try {
+      lines = readFileSync(gitignorePath, 'utf8').split(/\r\n|\n|\r/);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (lines.some((line) => line.trim() === SIBLING_TEMP_IGNORE)) {
+      return;
+    }
+    appendFileSync(
+      gitignorePath,
+      `\n# envseal: plaintext staging temp for the fallback atomic-write path\n${SIBLING_TEMP_IGNORE}\n`,
+      'utf8',
+    );
+  } catch {
+    if (!siblingIgnoreWarned) {
+      siblingIgnoreWarned = true;
+      process.stderr.write(
+        'envseal: staging temp could not be gitignored (gitignore unwritable) — check for ..env.*.tmp files after failures\n',
+      );
+    }
   }
 }
 

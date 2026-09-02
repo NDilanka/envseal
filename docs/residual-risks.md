@@ -160,7 +160,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 
 **The risk:** `.env` updates go through an atomic write whose temp file holds the complete plaintext. That temp file is written inside `.envseal/` (mode 0700, gitignored), which keeps it out of git. If `.envseal/` is unwritable — or has been made a junction onto another volume, so the final rename would cross devices — the writer falls back to the legacy sibling name `..env.<hex>.tmp` next to `.env` itself. A `.gitignore` entry of `.env` does not match that name, so a crash in exactly that window could leave a plaintext secret sitting in the working tree, stageable by an accidental `git add -A`.
 
-**What envseal does:** best-effort cleanup removes the temp file on every failure path, and the fallback triggers only when the primary location is unusable.
+**What envseal does:** best-effort cleanup removes the temp file on every failure path, and the fallback triggers only when the primary location is unusable. Since the first fallback use, the writer also appends `..env.*.tmp` to the project `.gitignore` before creating the sibling temp, so a crash leftover is not stageable by an accidental `git add -A` (append-once; if `.gitignore` itself is unwritable, one stderr warning names the follow-up check and nothing else changes).
 
 **Why we cannot do better:** an atomic replace requires the temp file and the target on the same volume; if `.envseal/` cannot host one, the sibling location is the only remaining same-volume choice.
 
@@ -209,7 +209,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 The PreToolUse hook closes ~20 bypass classes as of the W9 round (see `docs/verification/W9-comment-redteam.md` for each with its repro and closing commit). Classes that remain open by design or for a later wave:
 
 - **MCP tool surfaces:** any MCP filesystem server the user registers can read secret paths without touching the Bash matcher. Native `Grep`/`Glob` calls ARE routed through the hook matcher on Claude Code, but only because the bundled plugin's matcher lists them — other tools and hosts are outside. Advisory only today.
-- **Fail-open:** when the hook itself crashes, Claude Code proceeds — a broken hook degrades to tier B silently except for a stderr notice. `envseal doctor` reports whether hook wiring is present; it cannot prove the hook ran on the last call.
+- **Fail-open:** when the hook itself crashes, Claude Code proceeds — a broken hook degrades to tier B silently except for a stderr notice. `envseal doctor` reports whether hook wiring is present, and (since the hook-heartbeat feature) when the hook last ran: the hook refreshes `.envseal/hook-heartbeat` after every decision, so a wiring-present-but-never-ran state is visible as "none recorded". A fresh timestamp proves liveness, not correctness — a hook that runs but decides wrongly leaves no trace here.
 - **Same-uid reachability:** the macOS keychain sink resolves values through CLI tools the agent could also invoke directly; inherent to running everything under one uid (see §3).
 
 A name-based denylist layered over an agent that executes arbitrary code is defense in depth, not a sandbox. The load-bearing guarantee remains structural: no protocol verb returns a value.

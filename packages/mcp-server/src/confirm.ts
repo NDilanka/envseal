@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   useConfirmationBody as sharedUseConfirmationBody,
+  revokeConfirmationBody as sharedRevokeConfirmationBody,
   escapeForDisplay as coreEscapeForDisplay,
   displayArg as coreDisplayArg,
   type BrokerOptions,
@@ -37,6 +38,8 @@ import { makeDisplayNonce } from '@envseal/prompters';
 
 /** Value-entry key name carrying the `env_use` confirmation. */
 export const CONFIRM_KEY_USE = 'APPROVE';
+/** Value-entry key name carrying the `env_revoke` confirmation. */
+export const CONFIRM_KEY_REVOKE = 'APPROVE_REVOKE';
 /** Value-entry key name carrying the `env_verify` probe-consent question. */
 export const CONFIRM_KEY_PROBE = 'APPROVE_PROBE';
 
@@ -80,6 +83,10 @@ export function useConfirmationBody(
   projectRoot: string,
 ): string {
   return sharedUseConfirmationBody(info, projectRoot);
+}
+
+export function revokeConfirmationBody(keys: string[], projectRoot: string): string {
+  return sharedRevokeConfirmationBody(keys, projectRoot);
 }
 
 export function probeConfirmationBody(entry: ManifestEntry): string | null {
@@ -226,6 +233,63 @@ export function createUseConfirm(
 }
 
 /**
+ * `onRevokeConfirm` for the Broker: gates `env_revoke`.
+ *
+ * Same ask/outcome mapping as createUseConfirm. Throws rather than returning
+ * false when no human could be asked or when the ask expired unanswered.
+ */
+export function createRevokeConfirm(
+  surface: ConfirmSurface,
+): NonNullable<BrokerOptions['onRevokeConfirm']> {
+  return async (keys) => {
+    const outcome = await ask(
+      surface,
+      CONFIRM_KEY_REVOKE,
+      'Approve removing stored credentials? Nothing has been removed yet.',
+      revokeConfirmationBody(keys, surface.projectRoot),
+    );
+
+    switch (outcome) {
+      case 'approved':
+        return true;
+      case 'denied':
+        return false;
+      case 'timed-out':
+        throw new SepError({
+          code: 'SEP_TICKET_EXPIRED',
+          userMessage:
+            'The env_revoke confirmation closed after its timeout with nobody answering it. Nothing was ' +
+            'removed. This is not a denial: ask the user to approve it, then call env_revoke again.',
+        });
+      case 'no-surface':
+        throw new SepError({
+          code: 'SEP_NO_INTERACTIVE_SURFACE',
+          userMessage:
+            'env_revoke needs the user to confirm before stored credentials are removed, ' +
+            'but there is no interactive surface here to ask on (this is what CI looks like to envseal). ' +
+            'Nothing was removed. ' +
+            'There is no flag or environment variable that skips this prompt in this binding: the request ' +
+            'came from a model, and the confirmation is the only control on it. ' +
+            'Run `envseal revoke` yourself in a session that has a browser or a terminal.',
+        });
+      case 'busy':
+        throw new SepError({
+          code: 'SEP_RATE_LIMITED',
+          userMessage:
+            'Another envseal confirmation is already open. Answer that one first, then call env_revoke again.',
+        });
+      case 'too-large':
+        throw new SepError({
+          code: 'SEP_FORMAT_INVALID',
+          userMessage:
+            'This revoke request is too large to display in a confirmation dialog, and envseal will not ask ' +
+            'anyone to approve something it cannot show them. Revoke fewer keys at once.',
+        });
+    }
+  };
+}
+
+/**
  * `onApprovalNeeded` for the Broker: PLAN.md §6.4 probe consent for
  * `env_verify` against a host that is not registry-allowlisted.
  *
@@ -242,7 +306,7 @@ export function createProbeApproval(
     const outcome = await ask(
       surface,
       CONFIRM_KEY_PROBE,
-      `Approve sending ${entry.key} to a host that is not on envseal's allowlist? Nothing has been sent yet.`,
+      `Approve sending ${escapeForDisplay(entry.key)} to a host that is not on envseal's allowlist? Nothing has been sent yet.`,
       probeConfirmationBody(entry),
     );
     return outcome === 'approved';

@@ -4,7 +4,13 @@ import * as node_fs from 'node:fs';
 import * as node_os from 'node:os';
 import * as node_path from 'node:path';
 import { Broker } from '@envseal/core';
-import { createProbeApproval, createUseConfirm, dispatch, isSepToolName } from '@envseal/sdk';
+import {
+  createProbeApproval,
+  createRevokeConfirm,
+  createUseConfirm,
+  dispatch,
+  isSepToolName,
+} from '@envseal/sdk';
 import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
 import { generateOpenAPI } from './openapi.js';
@@ -35,26 +41,33 @@ async function getOrCreateToken(token?: string): Promise<string> {
 
   const tokenDir = node_path.join(node_os.homedir(), '.envseal');
   const tokenFile = node_path.join(tokenDir, 'api-token');
+  const persistRequested = process.env.ENVSEAL_PERSIST_HTTP_TOKEN === '1';
+  const existingToken = node_fs.existsSync(tokenFile);
 
-  // Create directory if needed
-  if (!node_fs.existsSync(tokenDir)) {
-    node_fs.mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+  // S3: persist only when explicitly requested or a user-wide token already exists.
+  if (persistRequested || existingToken) {
+    // Create directory if needed
+    if (!node_fs.existsSync(tokenDir)) {
+      node_fs.mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+    }
+
+    if (existingToken) {
+      const tokenBuf = node_fs.readFileSync(tokenFile);
+      return tokenBuf.toString('utf8').trim();
+    }
+
+    // Generate new token (32 random bytes as hex)
+    const randomBytes = node_crypto.randomBytes(32);
+    const newToken = randomBytes.toString('hex');
+
+    // Write with 0o600 permissions
+    node_fs.writeFileSync(tokenFile, newToken, { mode: 0o600 });
+
+    return newToken;
   }
 
-  // Check if token file exists
-  if (node_fs.existsSync(tokenFile)) {
-    const tokenBuf = node_fs.readFileSync(tokenFile);
-    return tokenBuf.toString('utf8').trim();
-  }
-
-  // Generate new token (32 random bytes as hex)
-  const randomBytes = node_crypto.randomBytes(32);
-  const newToken = randomBytes.toString('hex');
-
-  // Write with 0o600 permissions
-  node_fs.writeFileSync(tokenFile, newToken, { mode: 0o600 });
-
-  return newToken;
+  // Ephemeral listen token: 128-bit+, not written to ~/.envseal/api-token.
+  return node_crypto.randomBytes(32).toString('hex');
 }
 
 /**
@@ -100,6 +113,7 @@ export async function startHttpServer(
     // no way to ask anyone, and exec.ts reports the missing callback as "the
     // user denied the confirmation" for a user who was never asked.
     onConfirm: createUseConfirm(surface),
+    onRevokeConfirm: createRevokeConfirm(surface),
     // PLAN.md §6.4 probe consent, supplied by no binding before this.
     onApprovalNeeded: createProbeApproval(surface),
   });

@@ -41,7 +41,8 @@ The model never constructs a value, never reads one back, and cannot receive one
 
 > The hooks row applies to **Claude Code only**. Every other host gets the
 > protocol (the model still cannot see a value), but nothing intercepts a shell
-> command that reads `.env`. `envseal doctor` reports the real tier for your
+> command that reads `.env`. **Cursor, Aider, and Continue are Tier B** — advisory
+> rules only, not enforced hooks. `envseal doctor` reports the real tier for your
 > host — and reports tier B, not A, when the Claude Code plugin is not actually
 > installed.
 
@@ -71,17 +72,22 @@ For a runnable walk-through of the whole lifecycle (`init` → `ensure --check` 
 
 ## Connect your agent
 
-Provisioning keys is only half of it: your agent asks for them through the broker, so the host has to be able to start the broker. For Claude Code, create `.mcp.json` at the project root:
+Provisioning keys is only half of it: your agent asks for them through the broker, so the host has to be able to start the broker.
 
-```json
-{
-  "mcpServers": {
-    "envseal-mcp": { "command": "envseal-mcp", "args": [] }
-  }
-}
+```bash
+npm install -D @envseal/cli
+npx envseal init
 ```
 
-Restart Claude Code afterwards. Copy-pasteable snippets for Cursor, Zed, Codex, Continue and the other hosts are in [docs/hosts/README.md](docs/hosts/README.md); installing the bundled plugin in `plugins/claude-code` on top of the MCP server is what earns tier A.
+`init` always merges Layer 1 instructions into project-root `AGENTS.md` (any agent that reads instruction files can then run `envseal ensure` / `envseal run --` instead of asking for a paste). If this repo has project-local host markers (`.cursor/`, `.claude/`, …), or you ran the command from that IDE, it also writes the **project** MCP (or equivalent) config so the agent gets `env_declare` / `env_request` / `env_await` / `env_verify` / `env_use`. A repo used from Cursor and Claude Code gets both `.cursor/mcp.json` and `.mcp.json`. `init` does not scan `$HOME` or wire every IDE on the machine.
+
+Launch is `npx -y @envseal/mcp-server` (`npx.cmd` on Windows). Host MCP launchers do not search `node_modules/.bin`, so a bare `envseal-mcp` command will not start. Project MCP already has the workspace as cwd — `--project` is not baked into committed files.
+
+Do **not** put envseal in `~/.cursor/mcp.json` (or other user-global MCP files) as the default: those processes often start with `cwd` = `$HOME`, and `envseal-mcp` then exits `no project found`. If detection cannot see the IDE (bare terminal on an empty tree), `init` writes `AGENTS.md` only and prints: re-run from the IDE, or `envseal init --host cursor`.
+
+Reload MCP / restart the host, then `envseal doctor`. Doctor fails if an MCP-capable host’s project folder exists but `envseal-mcp` is not actually configured.
+
+Claude Code: `init` = protocol connected (Tier B via `.mcp.json`). Install `plugins/claude-code` for Tier A hooks. Snippets for every host: [docs/hosts/README.md](docs/hosts/README.md).
 
 ## Works with any agent
 
@@ -131,8 +137,8 @@ The seven tools:
 3. **`env_request(keys, reason)`** — Ask the user to provide the named keys via a secure browser or native dialog. Returns immediately with a ticket ID and nonce.
 4. **`env_await(ticket)`** — Block up to 90 seconds for the user to finish. Returns per-key outcome (stored, skipped, cancelled, invalid_format, verify_failed, timeout).
 5. **`env_verify(keys)`** — Test a key by calling the provider's authentication endpoint. Returns classified result (ok, auth_failed, rate_limited, etc.) without showing upstream response bodies.
-6. **`env_use(keys, command)`** — Run a shell command with the keys injected into child environment only. stdout/stderr are redacted. Every command requires confirmation; commands with detected network egress add an explicit warning on top.
-7. **`env_revoke(key)`** — Remove a key from the sink and report the provider's rotation URL so the model can tell the user where to invalidate it.
+6. **`env_use(keys, command)`** — Run a shell command with the keys injected into the child environment only. stdout/stderr are redacted. Refuses with `SEP_NOT_DECLARED` or `SEP_KEYS_MISSING` if any requested key is not declared or not stored — no partial injection. Every command requires confirmation; commands with detected network egress add an explicit warning on top.
+7. **`env_revoke(key)`** — Remove a key from the sink after user confirmation (MCP, SDK, HTTP, and CLI) and report the provider's rotation URL so the model can tell the user where to invalidate it.
 
 **There is no tool, flag, debug mode, or environment variable that returns a secret value from any of these operations.** Not in normal mode, verbose mode, dry-run, or in error paths.
 
@@ -142,7 +148,7 @@ This holds by construction rather than by convention: the model's verbs are decl
 
 - **[SECURITY.md](SECURITY.md)** — Supported versions and vulnerability reporting.
 - **[docs/threat-model.md](docs/threat-model.md)** — Detailed threat and mitigation analysis.
-- **[docs/residual-risks.md](docs/residual-risks.md)** — Seven risks that remain even with the protocol in place.
+- **[docs/residual-risks.md](docs/residual-risks.md)** — Nine risks that remain even with the protocol in place.
 - **[docs/ci.md](docs/ci.md)** — Using envseal on runners: the `ensure --check` gate, `ENVSEAL_ASSUME_YES`, and what stays outside envseal's boundary in CI.
 
 Read the residual risks section. No tool that handles secrets is risk-free, and this one makes no exceptions for marketing.

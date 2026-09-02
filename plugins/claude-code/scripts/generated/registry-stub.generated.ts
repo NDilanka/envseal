@@ -23,7 +23,7 @@ const PROVIDERS = [
         "envVar": "ANTHROPIC_API_KEY",
         "format": {
           "prefix": "sk-ant-",
-          "pattern": "^sk-ant-[A-Za-z0-9_-]{20,}$",
+          "pattern": "^sk-ant-[A-Za-z0-9_-]{20,256}$",
           "example": "sk-ant-XXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://console.anthropic.com/",
@@ -61,7 +61,7 @@ const PROVIDERS = [
       {
         "envVar": "AUTH0_CLIENT_SECRET",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -111,7 +111,7 @@ const PROVIDERS = [
       {
         "envVar": "AZURE_CLIENT_SECRET",
         "format": {
-          "pattern": "^[A-Za-z0-9._~-]{32,}$",
+          "pattern": "^[A-Za-z0-9._~-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -125,7 +125,7 @@ const PROVIDERS = [
         "envVar": "CLERK_SECRET_KEY",
         "format": {
           "prefix": "sk_",
-          "pattern": "^sk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^sk_[a-z]+_[A-Za-z0-9_-]{32,256}$",
           "example": "sk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://dashboard.clerk.com/"
@@ -134,7 +134,7 @@ const PROVIDERS = [
         "envVar": "CLERK_PUBLISHABLE_KEY",
         "format": {
           "prefix": "pk_",
-          "pattern": "^pk_[a-z]+_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^pk_[a-z]+_[A-Za-z0-9_-]{32,256}$",
           "example": "pk_xxxx_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -147,7 +147,7 @@ const PROVIDERS = [
       {
         "envVar": "CLOUDFLARE_API_TOKEN",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{40,}$",
+          "pattern": "^[A-Za-z0-9_-]{40,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       },
@@ -167,7 +167,7 @@ const PROVIDERS = [
       {
         "envVar": "COHERE_API_KEY",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://dashboard.cohere.ai/api-keys"
@@ -182,7 +182,7 @@ const PROVIDERS = [
         "envVar": "DEEPSEEK_API_KEY",
         "format": {
           "prefix": "sk-",
-          "pattern": "^sk-[A-Za-z0-9_-]{32,}$",
+          "pattern": "^sk-[A-Za-z0-9_-]{32,256}$",
           "example": "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://platform.deepseek.com/api_keys"
@@ -196,7 +196,7 @@ const PROVIDERS = [
       {
         "envVar": "DISCORD_BOT_TOKEN",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,}$",
+          "pattern": "^[A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{38,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXX.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -236,7 +236,7 @@ const PROVIDERS = [
         "envVar": "GITHUB_TOKEN",
         "format": {
           "prefix": "ghp_",
-          "pattern": "^(ghp_|github_pat_)[A-Za-z0-9_]{36,}$",
+          "pattern": "^(ghp_|github_pat_)[A-Za-z0-9_]{36,256}$",
           "example": "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://github.com/settings/tokens",
@@ -261,7 +261,7 @@ const PROVIDERS = [
         "envVar": "GITLAB_TOKEN",
         "format": {
           "prefix": "glpat-",
-          "pattern": "^glpat-[A-Za-z0-9_-]{20,}$",
+          "pattern": "^glpat-[A-Za-z0-9_-]{20,256}$",
           "example": "glpat-XXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://gitlab.com/-/user_settings/personal_access_tokens"
@@ -291,7 +291,7 @@ const PROVIDERS = [
         "envVar": "GROQ_API_KEY",
         "format": {
           "prefix": "gsk_",
-          "pattern": "^gsk_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^gsk_[A-Za-z0-9_-]{32,256}$",
           "example": "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://console.groq.com/keys",
@@ -316,7 +316,7 @@ const PROVIDERS = [
         "envVar": "HUGGINGFACE_API_KEY",
         "format": {
           "prefix": "hf_",
-          "pattern": "^hf_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^hf_[A-Za-z0-9_-]{32,256}$",
           "example": "hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://huggingface.co/settings/tokens"
@@ -331,7 +331,7 @@ const PROVIDERS = [
         "envVar": "LINEAR_API_KEY",
         "format": {
           "prefix": "lin_",
-          "pattern": "^lin_[A-Za-z0-9_-]{40,}$",
+          "pattern": "^lin_[A-Za-z0-9_-]{40,256}$",
           "example": "lin_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://linear.app/settings/api"
@@ -345,7 +345,7 @@ const PROVIDERS = [
       {
         "envVar": "MISTRAL_API_KEY",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://console.mistral.ai/api-keys/"
@@ -392,7 +392,7 @@ const PROVIDERS = [
       {
         "envVar": "NEON_API_KEY",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -405,7 +405,7 @@ const PROVIDERS = [
       {
         "envVar": "NETLIFY_TOKEN",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -419,7 +419,7 @@ const PROVIDERS = [
         "envVar": "NOTION_API_KEY",
         "format": {
           "prefix": "ntn_",
-          "pattern": "^ntn_[A-Za-z0-9_-]{64,}$",
+          "pattern": "^ntn_[A-Za-z0-9_-]{64,256}$",
           "example": "ntn_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://www.notion.so/my-integrations"
@@ -434,7 +434,7 @@ const PROVIDERS = [
         "envVar": "OPENAI_API_KEY",
         "format": {
           "prefix": "sk-",
-          "pattern": "^sk-[A-Za-z0-9_-]{20,}$",
+          "pattern": "^sk-[A-Za-z0-9_-]{20,256}$",
           "example": "sk-XXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://platform.openai.com/account/api-keys",
@@ -459,7 +459,7 @@ const PROVIDERS = [
         "envVar": "OPENROUTER_API_KEY",
         "format": {
           "prefix": "sk-or-",
-          "pattern": "^sk-or-[A-Za-z0-9_-]{32,}$",
+          "pattern": "^sk-or-[A-Za-z0-9_-]{32,256}$",
           "example": "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://openrouter.ai/keys",
@@ -510,7 +510,7 @@ const PROVIDERS = [
         "envVar": "POSTHOG_API_KEY",
         "format": {
           "prefix": "phc_",
-          "pattern": "^phc_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^phc_[A-Za-z0-9_-]{32,256}$",
           "example": "phc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -537,7 +537,7 @@ const PROVIDERS = [
         "envVar": "RESEND_API_KEY",
         "format": {
           "prefix": "re_",
-          "pattern": "^re_[A-Za-z0-9_-]{32,}$",
+          "pattern": "^re_[A-Za-z0-9_-]{32,256}$",
           "example": "re_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://resend.com/api-keys",
@@ -562,7 +562,7 @@ const PROVIDERS = [
         "envVar": "SENDGRID_API_KEY",
         "format": {
           "prefix": "SG.",
-          "pattern": "^SG\\.[A-Za-z0-9_-]{64,}$",
+          "pattern": "^SG\\.[A-Za-z0-9_-]{64,256}$",
           "example": "SG.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://app.sendgrid.com/settings/api_keys"
@@ -589,14 +589,14 @@ const PROVIDERS = [
         "envVar": "SLACK_BOT_TOKEN",
         "format": {
           "prefix": "xoxb-",
-          "pattern": "^xoxb-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-[A-Za-z0-9_-]{24,}$",
+          "pattern": "^xoxb-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-[A-Za-z0-9_-]{24,256}$",
           "example": "xoxb-XXXX-XXXX-XXXXXXXXXXXXXXXXXXXXXXXX"
         }
       },
       {
         "envVar": "SLACK_SIGNING_SECRET",
         "format": {
-          "pattern": "^[A-Za-z0-9]{32,}$",
+          "pattern": "^[A-Za-z0-9]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }
@@ -610,7 +610,7 @@ const PROVIDERS = [
         "envVar": "STRIPE_SECRET_KEY",
         "format": {
           "prefix": "sk_test_",
-          "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,}$",
+          "pattern": "^sk_(live|test)_[A-Za-z0-9_-]{24,256}$",
           "example": "sk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://dashboard.stripe.com/apikeys",
@@ -629,7 +629,7 @@ const PROVIDERS = [
         "envVar": "STRIPE_PUBLISHABLE_KEY",
         "format": {
           "prefix": "pk_test_",
-          "pattern": "^pk_(live|test)_[A-Za-z0-9_-]{24,}$",
+          "pattern": "^pk_(live|test)_[A-Za-z0-9_-]{24,256}$",
           "example": "pk_test_XXXXXXXXXXXXXXXXXXXXXXXX"
         },
         "rotateUrl": "https://dashboard.stripe.com/apikeys"
@@ -649,14 +649,14 @@ const PROVIDERS = [
       {
         "envVar": "SUPABASE_ANON_KEY",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       },
       {
         "envVar": "SUPABASE_SERVICE_ROLE_KEY",
         "format": {
-          "pattern": "^[A-Za-z0-9_-]{32,}$",
+          "pattern": "^[A-Za-z0-9_-]{32,256}$",
           "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         }
       }

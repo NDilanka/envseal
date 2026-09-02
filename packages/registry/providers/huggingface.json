@@ -7,7 +7,7 @@
       "envVar": "HUGGINGFACE_API_KEY",
       "description": "Hugging Face API key",
       "format": {
-        "pattern": "^hf_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^hf_[A-Za-z0-9_-]{32,256}$",
         "prefix": "hf_",
         "minLength": 32,
         "example": "hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

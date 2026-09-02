@@ -27,6 +27,7 @@ export function exitCodeForError(e: unknown): number {
     case 'SEP_GITIGNORE_UNSAFE':
     case 'SEP_PROBE_NOT_APPROVED':
     case 'SEP_VALUE_IN_REQUEST':
+    case 'SEP_PATTERN_UNSAFE':
       return EXIT.USAGE;
 
     case 'SEP_NO_INTERACTIVE_SURFACE':
@@ -45,6 +46,7 @@ export function exitCodeForError(e: unknown): number {
     case 'SEP_TICKET_UNKNOWN':
     case 'SEP_TARGET_CHANGED':
     case 'SEP_CONFIRMATION_DENIED':
+    case 'SEP_KEYS_MISSING':
       return EXIT.UNSATISFIED;
 
     case 'SEP_EGRESS_DENIED':

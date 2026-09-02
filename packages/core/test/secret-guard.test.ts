@@ -265,7 +265,7 @@ describe('secret-shaped input guard', () => {
         entry: {
           key: 'OPENAI_API_KEY',
           description: 'OpenAI API key',
-          format: { pattern: '^sk-[A-Za-z0-9]{20,}$', example: 'sk-XXXXXXXXXXXXXXXXXXXX' },
+          format: { pattern: '^sk-[A-Za-z0-9]{20,256}$', example: 'sk-XXXXXXXXXXXXXXXXXXXX' },
         },
       },
       {

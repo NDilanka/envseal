@@ -18,6 +18,7 @@ export async function createBroker(
   opts?: {
     onConfirm?: BrokerOpts['onConfirm'];
     onApprovalNeeded?: BrokerOpts['onApprovalNeeded'];
+    onRevokeConfirm?: BrokerOpts['onRevokeConfirm'];
   },
 ): Promise<Broker> {
   let prompter;
@@ -36,6 +37,7 @@ export async function createBroker(
     prompter,
     onConfirm: opts?.onConfirm,
     onApprovalNeeded: opts?.onApprovalNeeded,
+    onRevokeConfirm: opts?.onRevokeConfirm,
   });
   registerDisposable(() => broker.dispose());
   return broker;
@@ -183,9 +185,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 const COMMAND_USAGE: Record<string, string> = {
   init: `Usage: envseal init [--host <name>] [--json] [--project <path>]
 
-Initialize env.schema.jsonc, declaring every environment-variable reference found by scanning the project.
+Initialize env.schema.jsonc, merge AGENTS.md (Layer 1), and write project host MCP/config for every matching marker.
 
-  --host <name>     Override host detection. Valid values: claude-code, cursor, continue, aider, windsurf, cline, zed, codex, jetbrains, goose, copilot, generic, unknown.
+  --host <name>     Write this host's project config (comma-separated ok). Valid values: claude-code, cursor, continue, aider, windsurf, cline, zed, codex, jetbrains, goose, copilot, generic, unknown, openhands.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
   ensure: `Usage: envseal ensure [--check] [--json] [--project <path>]
@@ -224,15 +226,17 @@ Asks for confirmation first; --yes (or ENVSEAL_ASSUME_YES=1) pre-approves it.
   --project <path>  Project root (default: auto-detect).`,
   doctor: `Usage: envseal doctor [--json] [--project <path>]
 
-Audit the project configuration: detected host and tier, gitignore coverage,
-file permissions, missing required keys.
+Audit the project configuration: detected host and tier, agent wiring (MCP +
+AGENTS.md), gitignore coverage, file permissions, missing required keys.
 
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
-  revoke: `Usage: envseal revoke <KEY> [--json] [--project <path>]
+  revoke: `Usage: envseal revoke <KEY> [--yes] [--json] [--project <path>]
 
 Remove a key from its sink and report the provider's rotation URL.
+Asks for confirmation first; --yes (or ENVSEAL_ASSUME_YES=1) pre-approves it.
 
+  --yes             Skip the confirmation prompt.
   --json            Output as JSON.
   --project <path>  Project root (default: auto-detect).`,
   mcp: `Usage: envseal mcp

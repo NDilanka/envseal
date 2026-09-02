@@ -1,0 +1,36 @@
+/**
+ * Aider config shipped by `envseal init --host aider`.
+ *
+ * Keep this string identical to `plugins/aider/.aider.conf.yml`. The host-wiring
+ * test fails if they drift.
+ */
+export const AIDER_CONF_YML = `# .aider.conf.yml — envseal for Aider (Tier C host, Tier-4 CLI binding)
+#
+# Aider renders every file it reads into the chat context. NEVER add \`.env\`
+# or \`.env.*\` to the \`read\` list — that is exactly the leak path envseal exists
+# to prevent. \`env.schema.jsonc\` and \`.env.example\` contain declarations and
+# placeholders only and are safe to read.
+
+model: gpt-4o
+edit-format: editor-diff
+
+read:
+  - env.schema.jsonc
+  - .env.example
+
+# Optional: run a command after every edit with secrets injected.
+# auto-test:
+#   command: "../../.../envseal run -- pnpm test"
+
+# --- Tier-4 shell recipe (run from Aider's REPL) --------------------------
+#
+#   /run envseal status                 # which declared keys are present
+#   /run envseal ensure                 # prompt the user for every missing key
+#   /run envseal run -- pytest          # run tests with secrets injected
+#   /run envseal verify                 # probe the keys end-to-end
+#   /run envseal doctor                 # report host + tier + config health
+#
+# \`envseal ensure\` and \`envseal run --\` are the only ways to obtain or use
+# secret values inside Aider. Never ask the user to paste a key into the chat;
+# never read \`.env\`; never \`echo $KEY\`.
+`;

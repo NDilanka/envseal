@@ -1,29 +1,11 @@
 import { projectPaths, loadManifest, declareEntries, scanManifestEntry } from '@envseal/core';
 import { SepError } from '@envseal/protocol';
 import { emit, fail } from '../output.js';
-import { detectHost } from '../host.js';
+import { detectHost, resolveInitHostIds } from '../host.js';
 import { scanForEnvKeys, entryForKey } from '../scan.js';
 import { EXIT } from '../exit-codes.js';
 import { finish } from '../exit.js';
-
-// The ids detectHost can ever return. --host used to accept any string
-// silently, recording a host detection would never report and printing a tier
-// computed for a fiction.
-const KNOWN_HOST_IDS = [
-  'claude-code',
-  'cursor',
-  'continue',
-  'aider',
-  'windsurf',
-  'cline',
-  'zed',
-  'codex',
-  'jetbrains',
-  'goose',
-  'copilot',
-  'generic',
-  'unknown',
-];
+import { applyHostWiring } from '../host-wiring/apply.js';
 
 export async function init(
   root: string,
@@ -31,10 +13,9 @@ export async function init(
   hostOverride?: string,
 ): Promise<void> {
   try {
-    if (hostOverride !== undefined && !KNOWN_HOST_IDS.includes(hostOverride)) {
-      console.error(
-        `Error: unknown --host '${hostOverride}'. Valid values: ${KNOWN_HOST_IDS.join(', ')}.`,
-      );
+    const resolved = resolveInitHostIds(root, hostOverride);
+    if (resolved.error !== undefined) {
+      console.error(`Error: ${resolved.error}`);
       finish(EXIT.USAGE);
       return;
     }
@@ -73,14 +54,20 @@ export async function init(
     const result = declareEntries(paths, entries);
     const manifest = loadManifest(paths);
 
-    const host = hostOverride
-      ? { id: hostOverride, name: hostOverride, tier: 'C' as const, reason: 'specified with --host', recommendation: '' }
-      : detectHost(root);
+    const wiring = applyHostWiring(root, resolved.ids);
+    // Evidence after write: --host cursor on a bare tree now has `.cursor/`.
+    // Never invent a fake tier from the flag alone.
+    const detected = detectHost(root);
+    const cursorEntry = wiring.hosts.find((h) => h.id === 'cursor');
+    const cursorWiring = wiring.cursor;
 
     const output = {
       manifestPath: paths.manifest,
-      host: host.id,
-      protectionTier: host.tier,
+      host: detected.id,
+      protectionTier: detected.tier,
+      requestedHosts: resolved.source === 'flag' ? resolved.ids : undefined,
+      wiredHosts: resolved.ids,
+      wiringSource: resolved.source,
       scanned: discovered.length,
       added: result.added,
       updated: result.updated,
@@ -88,6 +75,25 @@ export async function init(
       secretKeys: discovered.filter((d) => d.secret).map((d) => d.key),
       configKeys: discovered.filter((d) => !d.secret).map((d) => d.key),
       entries: manifest?.entries.length ?? 0,
+      agentsMd: {
+        action: wiring.agentsMd.action,
+        path: wiring.agentsMd.path,
+      },
+      hostWiring: wiring.hosts.map((h) => ({
+        id: h.id,
+        action: h.action,
+        path: h.path,
+      })),
+      ...(cursorWiring === undefined
+        ? {}
+        : {
+            cursorWiring: {
+              mcp: cursorWiring.mcp,
+              rules: cursorWiring.rules,
+              mcpPath: cursorWiring.mcpPath,
+              rulesPath: cursorWiring.rulesPath,
+            },
+          }),
     };
 
     if (json) {
@@ -111,26 +117,43 @@ export async function init(
         console.log(`  Config (not prompted): ${config.map((s) => s.key).join(', ')}`);
       }
     }
-    console.log(`  Host: ${host.name} (protection tier ${host.tier})`);
-    if (host.recommendation) console.log(`  ${host.recommendation}`);
-    if (hostOverride) {
-      // The override line above is what was ASKED for, not what is here. An
-      // auto-detected init on the same project can print a different tier, and
-      // doctor is the one that reports evidence.
-      console.log('  Override recorded; envseal doctor reports what is actually detected.');
-    }
-    if (host.id === 'claude-code') {
-      // Without this the first run ends at a manifest and no connection: init
-      // writes env.schema.jsonc but nothing tells the user the agent still has
-      // to be pointed at the broker.
-      console.log('');
-      console.log('Connect your agent: create .mcp.json in the project root containing');
-      console.log('  {"mcpServers":{"envseal-mcp":{"command":"envseal-mcp","args":[]}}}');
+
+    console.log(`  AGENTS.md: ${wiring.agentsMd.action} (Layer 1 — envseal ensure / envseal run --)`);
+    console.log(`  Detected host: ${detected.name} (protection tier ${detected.tier})`);
+    console.log(`    ${detected.reason}`);
+    if (detected.recommendation) console.log(`    ${detected.recommendation}`);
+    if (resolved.source === 'flag') {
       console.log(
-        'then restart Claude Code — or install plugins/claude-code for Tier A hooks.',
+        `  Requested host(s): ${resolved.ids.join(', ')}. Override recorded; envseal doctor reports what is actually detected.`,
       );
+    }
+    if (resolved.source === 'none') {
+      console.log('  No project host markers and this process is not an IDE.');
+      console.log('  Wrote AGENTS.md only. Re-run from the IDE, or `envseal init --host cursor`.');
+    } else if (resolved.ids.length > 0) {
+      console.log(`  Wired host(s): ${resolved.ids.join(', ')} (${resolved.source})`);
+    }
+    for (const entry of wiring.hosts) {
+      if (entry.hint) {
+        for (const line of entry.hint.split('\n')) {
+          console.log(`  ${line}`);
+        }
+      }
+    }
+    if (cursorEntry === undefined && !wiring.bareTerminal) {
+      console.log('  Reload MCP / restart the host, then run `envseal doctor`.');
+    } else if (cursorWiring !== undefined && cursorWiring.mcp !== 'skipped' && wiring.hosts.length === 1) {
+      // Cursor entry already printed reloadHint.
+    } else if (wiring.bareTerminal && resolved.source === 'none') {
+      // Already printed the re-run hint.
+    } else if (wiring.hosts.some((h) => h.id !== 'cursor')) {
+      // Per-host hints already cover reload; keep a single closer.
+    }
+    if (resolved.ids.includes('claude-code')) {
+      console.log('  Claude Code: protocol connected (Tier B) via .mcp.json. Plugin = Tier A.');
     }
   } catch (error) {
     fail(json, error);
   }
 }
+

@@ -28,7 +28,7 @@
       "envVar": "AUTH0_CLIENT_SECRET",
       "description": "Auth0 client secret",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "pattern": "^[A-Za-z0-9_-]{32,256}$",
         "minLength": 32,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

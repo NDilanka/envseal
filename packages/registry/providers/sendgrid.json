@@ -7,7 +7,7 @@
       "envVar": "SENDGRID_API_KEY",
       "description": "SendGrid email API key",
       "format": {
-        "pattern": "^SG\\.[A-Za-z0-9_-]{64,}$",
+        "pattern": "^SG\\.[A-Za-z0-9_-]{64,256}$",
         "prefix": "SG.",
         "minLength": 64,
         "example": "SG.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

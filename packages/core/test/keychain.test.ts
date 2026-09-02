@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { asSecret } from '@envseal/protocol';
 import { projectPaths } from '../src/paths.js';
-import { keychainSink } from '../src/sinks/keychain.js';
+import { keychainSink, buildDarwinWriteArgs } from '../src/sinks/keychain.js';
 
 // Unique per run: the Windows blob is keyed by <KEY> alone in the shared
 // per-user creds dir (that is how write() stores it), so a fixed name would
@@ -28,6 +28,21 @@ function commandAvailable(cmd: string): boolean {
 }
 
 describe('keychain sink round-trip', () => {
+  it('darwin write uses -w because security(1) has no stdin password path', () => {
+    const secret = 'sk-test-never-on-argv-abc123';
+    const args = buildDarwinWriteArgs('myproject:MY_KEY', secret);
+    expect(args).toEqual([
+      'add-generic-password',
+      '-U',
+      '-s',
+      'envseal',
+      '-a',
+      'myproject:MY_KEY',
+      '-w',
+      secret,
+    ]);
+  });
+
   // Every test spawns the platform store helper several times (powershell/
   // DPAPI on Windows, security on macOS, secret-tool on Linux). Cold CI
   // runners outran the 5s vitest default on first exposure — passing on dev

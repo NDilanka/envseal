@@ -1020,6 +1020,12 @@ For hosts without hook support, the docs MUST state the protection tier plainly 
 and its tier; `envseal init --host cursor` on a clean fixture produces a `.cursor/mcp.json` that a
 schema test validates.
 
+**Shipped in v0.1.5:** `init` always merges Layer 1 `AGENTS.md`, then writes **every** matching
+project host config (not first-wins). Launch is `npx -y @envseal/mcp-server` (`npx.cmd` on
+Windows), never a bare `envseal-mcp` on PATH and never `$HOME` MCP. `--host` is a write
+escape hatch, not a fake protection tier. Doctor fail-closes when the primary host’s MCP
+is unwired. Detection does not inventory IDEs under `$HOME`.
+
 ### T10.2 — Spec publication
 Copy Part I into `spec/sep-1/SPEC.md` with a conformance section: an implementation is SEP/1
 conformant if it implements the seven tools, never returns values, and passes the published

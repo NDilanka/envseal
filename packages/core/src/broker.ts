@@ -18,6 +18,7 @@ import type {
   KeyStatus,
 } from '@envseal/protocol';
 import { SepError, isSepError, zero } from '@envseal/protocol';
+import { compileSafePattern } from './pattern.js';
 import { getProvider, findKey } from '@envseal/registry';
 import type { Prompter } from '@envseal/prompters';
 import { selectPrompter } from '@envseal/prompters';
@@ -58,6 +59,7 @@ export interface BrokerOptions {
   root: string;
   prompter?: Prompter;
   onConfirm?: ExecOptions['onConfirm'];
+  onRevokeConfirm?: (keys: string[]) => Promise<boolean>;
   onApprovalNeeded?: VerifyOptions['onApprovalNeeded'];
 }
 
@@ -67,6 +69,7 @@ export class Broker {
   private prompterPromise: Promise<Prompter> | null;
   private readonly ticketStore: TicketStore;
   private readonly onConfirm: ExecOptions['onConfirm'] | undefined;
+  private readonly onRevokeConfirm: BrokerOptions['onRevokeConfirm'];
   private readonly onApprovalNeeded: VerifyOptions['onApprovalNeeded'] | undefined;
   private readonly salt: Buffer;
 
@@ -74,6 +77,7 @@ export class Broker {
     this.paths = projectPaths(opts.root);
     this.ticketStore = new TicketStore();
     this.onConfirm = opts.onConfirm;
+    this.onRevokeConfirm = opts.onRevokeConfirm;
     this.onApprovalNeeded = opts.onApprovalNeeded;
     this.salt = loadOrCreateSalt(this.paths);
     this.prompter = opts.prompter ?? null;
@@ -129,7 +133,7 @@ export class Broker {
         if (formatValid === null) {
           const trusted = findKey(entry.key)?.key.format?.pattern;
           if (trusted !== undefined) {
-            formatValid = new RegExp(trusted).test(value.toString('utf8'));
+            formatValid = compileSafePattern(trusted).test(value.toString('utf8'));
           }
         }
       }
@@ -343,7 +347,7 @@ export class Broker {
 
         if (result.outcome === 'entered') {
           if (entry.format?.pattern) {
-            const pattern = new RegExp(entry.format.pattern);
+            const pattern = compileSafePattern(entry.format.pattern);
             const valueStr = result.value.toString('utf8');
             if (!pattern.test(valueStr)) {
               this.ticketStore.setOutcome(ticketId, result.key, 'invalid_format');
@@ -470,18 +474,34 @@ export class Broker {
 
   async use(input: EnvUseInput): Promise<ExecResult> {
     const manifest = loadManifest(this.paths) ?? emptyManifest();
-    const secrets = new Map<string, import('@envseal/protocol').SecretValue>();
+    const declaredKeys = new Set(manifest.entries.map((e) => e.key));
 
     for (const keyName of input.keys) {
-      const entry = manifest.entries.find((e) => e.key === keyName);
-      if (!entry) continue;
+      if (!declaredKeys.has(keyName)) {
+        throw new SepError({ code: 'SEP_NOT_DECLARED' });
+      }
+    }
 
+    const secrets = new Map<string, import('@envseal/protocol').SecretValue>();
+    const missing: string[] = [];
+
+    for (const keyName of input.keys) {
+      const entry = manifest.entries.find((e) => e.key === keyName)!;
       const sink = getSink(entry.sink ?? 'dotenv');
       const value = await sink.read(this.paths, keyName);
 
       if (value) {
         secrets.set(keyName, value);
+      } else {
+        missing.push(keyName);
       }
+    }
+
+    if (missing.length > 0) {
+      throw new SepError({
+        code: 'SEP_KEYS_MISSING',
+        userMessage: `Missing stored values for: ${missing.join(', ')}. Declare and store them before use.`,
+      });
     }
 
     const result = await runWithSecrets(input.command, secrets, {
@@ -502,6 +522,14 @@ export class Broker {
   }
 
   async revoke(input: EnvRevokeInput): Promise<RevokeResults> {
+    if (!this.onRevokeConfirm) {
+      throw new SepError({ code: 'SEP_CONFIRMATION_DENIED' });
+    }
+    const confirmed = await this.onRevokeConfirm(input.keys);
+    if (!confirmed) {
+      throw new SepError({ code: 'SEP_CONFIRMATION_DENIED' });
+    }
+
     const manifest = loadManifest(this.paths) ?? emptyManifest();
     const results: RevokeResult[] = [];
 

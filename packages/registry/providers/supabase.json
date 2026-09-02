@@ -16,7 +16,7 @@
       "envVar": "SUPABASE_ANON_KEY",
       "description": "Supabase anonymous key",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "pattern": "^[A-Za-z0-9_-]{32,256}$",
         "minLength": 32,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },
@@ -27,7 +27,7 @@
       "envVar": "SUPABASE_SERVICE_ROLE_KEY",
       "description": "Supabase service role key",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "pattern": "^[A-Za-z0-9_-]{32,256}$",
         "minLength": 32,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

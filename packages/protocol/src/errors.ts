@@ -15,6 +15,8 @@ export const SEP_ERROR_CODES = [
   'SEP_RATE_LIMITED',
   'SEP_TARGET_CHANGED',
   'SEP_EGRESS_DENIED',
+  'SEP_PATTERN_UNSAFE',
+  'SEP_KEYS_MISSING',
 ] as const;
 
 export type SepErrorCode = (typeof SEP_ERROR_CODES)[number];
@@ -92,6 +94,16 @@ export const SEP_ERROR_DEFAULTS: Record<SepErrorCode, SepErrorDefaults> = {
     userMessage:
       'This project uses an egress allowlist, and the command targets a host that is not on it. ' +
       'Nothing was executed or sent. To allow the host, add it to policy.egress.allow in env.schema.jsonc.',
+  },
+  SEP_PATTERN_UNSAFE: {
+    retriable: false,
+    userMessage:
+      'The declared format.pattern is unsafe or too complex. Use a shorter, bounded pattern (for example ^sk-[A-Za-z0-9]{20,80}$).',
+  },
+  SEP_KEYS_MISSING: {
+    retriable: false,
+    userMessage:
+      'One or more requested keys are undeclared or have no stored value. Declare and store them before use.',
   },
 };
 

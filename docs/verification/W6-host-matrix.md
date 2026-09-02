@@ -1,5 +1,13 @@
 # W6 — Host integration matrix reality check
 
+> **Historical.** This audit describes the tree *before* v0.1.5 host wiring.
+> As of v0.1.5, `envseal init` writes project MCP/`AGENTS.md` for every matching
+> marker (or `--host`); `detectHost()` knows the project-local markers listed in
+> `docs/hosts/README.md`; `init --host` no longer hardcodes protection tier C;
+> plugin snippets launch via `npx -y @envseal/mcp-server`. Do not treat the
+> INCONSISTENT rows below as current defects. Leave the original findings intact
+> as a record of what the earlier docs claimed.
+
 Scope: documentation-consistency audit only; no live host integration, no file modified except this
 report. Sources of truth: `packages/cli/src/host.ts` (tier assignments), `packages/mcp-server/package.json`
 (`bin` = `envseal-mcp`), `packages/cli/package.json` (`bin` = `envseal`), `docs/cli-contract.md` (CLI

@@ -58,30 +58,119 @@ const HAND_PATTERNS: HandPattern[] = [
   { id: 'conn-string', label: 'database connection string', source: `(?:postgres|postgresql|mysql|mongodb(?:\\+srv)?|redis|amqp)://[^:\\s/]+:[^@\\s]+@` },
 ];
 
+/** Registry patterns must be bounded before compilation (ReDoS guard). */
+export function isBoundedRegistryPattern(source: string): boolean {
+  if (source.length >= 256) return false;
+  if (/\([^)]*[+*][^)]*\)[+*]/.test(source)) return false;
+  if (!/\{\d+(?:,\d*)?\}/.test(source)) return false;
+  for (const match of source.matchAll(/\{(\d+)(?:,(\d*))?\}/g)) {
+    const low = Number(match[1]);
+    const high = match[2] === undefined || match[2] === '' ? low : Number(match[2]);
+    if (low > 256 || high > 256) return false;
+  }
+  return true;
+}
+
+/**
+ * Skip compiling single-segment `[charset]{n,m}` patterns — they match git SHAs,
+ * UUID-shaped noise, and other corpus negatives. Patterns with literal structure
+ * outside char classes (Discord's dot-separated segments, Clerk's `sk_live_`, …)
+ * are specific enough to register as high-confidence detectors.
+ */
+export function isSpecificRegistryPattern(source: string): boolean {
+  const body = stripPatternAnchors(source);
+  const withoutClasses = body.replace(/\[[^\]]*\]/g, '\0');
+  if (/[^\0\d{},+?*|\\]/.test(withoutClasses)) return true;
+  return (body.match(/\{\d+(?:,\d*)?\}/g) ?? []).length > 1;
+}
+
+function shouldUseRegistryPattern(entry: { prefix?: string; pattern?: string }): boolean {
+  if (entry.pattern === undefined) return false;
+  if (!isBoundedRegistryPattern(entry.pattern)) return false;
+  if (isUuidValidationPattern(entry.pattern)) return false;
+  return isSpecificRegistryPattern(entry.pattern);
+}
+
+function stripPatternAnchors(source: string): string {
+  let body = source;
+  if (body.startsWith('^')) body = body.slice(1);
+  if (body.endsWith('$')) body = body.slice(0, -1);
+  return body;
+}
+
+function isUuidValidationPattern(source: string): boolean {
+  const normalized = stripPatternAnchors(source)
+    .toLowerCase()
+    .replace(/\[[0-9a-f-]+\]/g, '[hex]');
+  return normalized === '[hex]{8}-[hex]{4}-[hex]{4}-[hex]{4}-[hex]{12}';
+}
+
+function withLeadingBoundary(source: string): string {
+  return source.startsWith('(?') ? source : `(?<![A-Za-z0-9_-])${source}`;
+}
+
+function registryPatternToRegex(source: string): RegExp {
+  return new RegExp(withLeadingBoundary(stripPatternAnchors(source)), 'g');
+}
+
+function synthesizePrefixBody(pattern?: string): string {
+  if (pattern === undefined) return '[A-Za-z0-9]{16,}';
+  if (/\[A-Za-z0-9_\\-]/.test(pattern) || /\[A-Za-z0-9_-]/.test(pattern)) {
+    return '[A-Za-z0-9_\\-]{16,}';
+  }
+  if (/\[A-Za-z0-9_]/.test(pattern)) return '[A-Za-z0-9_]{16,}';
+  return '[A-Za-z0-9]{16,}';
+}
+
+function registryEntryPattern(entry: {
+  providerId: string;
+  envVar: string;
+  prefix?: string;
+  pattern?: string;
+}): SecretPattern | null {
+  const id = `registry:${entry.providerId}:${entry.envVar}`;
+  const label = `${entry.providerId} ${entry.envVar}`;
+
+  if (entry.pattern !== undefined && shouldUseRegistryPattern(entry)) {
+    try {
+      return {
+        id,
+        regex: registryPatternToRegex(entry.pattern),
+        providerId: entry.providerId,
+        confidence: 'high',
+        label,
+      };
+    } catch {
+      // Fall through to prefix synthesis when compilation fails.
+    }
+  }
+
+  if (entry.prefix === undefined) return null;
+
+  // Two guards, both load-bearing for registry-derived patterns synthesised
+  // from a bare prefix when no bounded pattern is available:
+  //
+  // 1. A leading boundary. Without it a short prefix matches mid-identifier —
+  //    Twilio's `AC` matched inside `REACT_APP_FEATURE_FLAG_ENABLED`, turning
+  //    an ordinary env-var name into a "high confidence" credential hit.
+  // 2. A body charset inferred from the registry pattern when present so keys
+  //    that allow `_` (Clerk `sk_test_…`) are not forced through `[A-Za-z0-9]`.
+  const body = synthesizePrefixBody(entry.pattern);
+  return {
+    id,
+    regex: new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(entry.prefix)}${body}`, 'g'),
+    providerId: entry.providerId,
+    confidence: 'high',
+    label,
+  };
+}
+
 export function allPatterns(): SecretPattern[] {
   const patterns: SecretPattern[] = [];
 
   for (const entry of allPrefixPatterns()) {
-    if (entry.prefix === undefined) {
-      continue;
-    }
-    // Two guards, both load-bearing for registry-derived patterns, which are
-    // synthesised from a bare prefix and so are far weaker than the hand-written
-    // ones:
-    //
-    // 1. A leading boundary. Without it a short prefix matches mid-identifier —
-    //    Twilio's `AC` matched inside `REACT_APP_FEATURE_FLAG_ENABLED`, turning
-    //    an ordinary env-var name into a "high confidence" credential hit.
-    // 2. An alphanumeric-only body. Real key material is random alphanumerics;
-    //    SCREAMING_SNAKE identifiers are not. Excluding `_` and `-` from the body
-    //    stops the pattern from running through word separators.
-    patterns.push({
-      id: `registry:${entry.providerId}:${entry.envVar}`,
-      regex: new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(entry.prefix)}[A-Za-z0-9]{16,}`, 'g'),
-      providerId: entry.providerId,
-      confidence: 'high',
-      label: `${entry.providerId} ${entry.envVar}`,
-    });
+    const compiled = registryEntryPattern(entry);
+    if (compiled !== null) patterns.push(compiled);
   }
 
   for (const hp of HAND_PATTERNS) {

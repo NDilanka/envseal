@@ -1,4 +1,7 @@
 import { findProjectRoot, loadManifest, projectPaths } from '@envseal/core';
+import { detect } from '@envseal/detector';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { readPayload, writeResult } from './lib.js';
 
 /**
@@ -32,6 +35,8 @@ export interface ToolCall {
 export interface PreToolUseContext {
   /** Declared secret keys from the manifest, uppercased. */
   declaredSecrets?: string[];
+  /** Working directory for resolving relative file paths (hook payload cwd). */
+  cwd?: string;
 }
 
 export interface Decision {
@@ -127,6 +132,40 @@ const FILE_READERS = new Set([
   'jq',
   'yq',
   'diff',
+  // H1: bash builtins that execute a file in the current shell — same leak
+  // class as `cat` when the operand is a secret path.
+  'source',
+  '.',
+]);
+
+/** S2: nested `sh -c` / `bash -c` payloads beyond this depth are denied by
+ *  analyzeShellNesting; the dashCPayload recursion below fails open past its
+ *  own cap. Generous enough for real commands, small enough that adversarial
+ *  nesting cannot make the scanner do unbounded work — the heuristic layer is
+ *  not a sandbox. */
+export const MAX_PAYLOAD_DEPTH = 3;
+const SHELL_INVOKERS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
+const WRAPPERS = new Set([
+  'sudo',
+  'command',
+  'exec',
+  'builtin',
+  'nice',
+  'nohup',
+  'xargs',
+  'env',
+  // H3: busybox multiplexes applets — `busybox cat .env` is still a read.
+  'busybox',
+  'busybox.exe',
+  // Windows shells are wrappers in the same sense: the inner head
+  // (`type .env`, `Get-Content .env`) is what reads. `/c`, `-c`,
+  // `-Command` carry flags, so the flag rule below ends unwrapping after
+  // one hop — the dashCPayload recursion covers the quoted-payload forms.
+  'cmd',
+  'cmd.exe',
+  'powershell',
+  'powershell.exe',
+  'pwsh',
 ]);
 // W3-07: backticks are command substitution too. Without splitting on them,
 // `echo "`cat <envfile>`"` was one segment whose head is `echo` — the inner
@@ -138,11 +177,6 @@ const SEGMENT_SPLIT_RE = /\s*(?:&&|\|\||;|\||\(|\)|\n|`)\s*/;
 // `eval` execute such a payload, so the payload must be scanned itself
 // instead of passing on its wrapper's innocence.
 const SHELL_C_HEADS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'busybox']);
-/** How deep `sh -c "sh -c …"` nesting is followed. Generous enough for real
- *  commands, small enough that adversarial nesting cannot make the scanner
- *  do unbounded work; beyond the cap we fail open (heuristic layer, not a
- *  sandbox). */
-const MAX_PAYLOAD_DEPTH = 3;
 // Audit follow-up: interpreters execute code STRINGS that open files from
 // inside the language (`python3 -c "print(open('.env').read())"`), so no
 // reader head ever reaches the surface — FILE_READERS cannot see them. An
@@ -262,6 +296,33 @@ export function isDeniedSecretPath(path: string): boolean {
   return false;
 }
 
+/** H5: manifest reads are allowed, but not when comments hold secret-shaped text. */
+export function isEnvSchemaJsoncPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  const base = norm.split('/').pop() ?? norm;
+  return base === 'env.schema.jsonc';
+}
+
+export const ENV_SCHEMA_SECRET_DENY_REASON =
+  'Blocked: env.schema.jsonc contains secret-shaped text. Remove it from the file (including comments); store values with envseal, not in the manifest.';
+
+function resolveFilePath(path: string, cwd: string): string {
+  return isAbsolute(path) ? path : join(cwd, path);
+}
+
+/** Scan on-disk manifest text; fail-open when the file is missing or unreadable. */
+export function envSchemaJsoncHasHighConfidenceSecret(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+    const text = readFileSync(filePath, 'utf8');
+    return detect(text).some((d) => d.confidence === 'high');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The first denied secret basename named anywhere in a segment's argument
  * text, or null. The text is chunked on characters that cannot occur inside
@@ -317,6 +378,45 @@ export function stripAssignments(segment: string): string {
   return out;
 }
 
+/** H2: after `env`, skip flags (-i, -u VAR, -C DIR, --…) before the command. */
+export function stripEnvInvocationPrefix(rest: string): string {
+  let out = rest.trim();
+  for (;;) {
+    out = stripAssignments(out);
+    const next = /^([^\s]+)/.exec(out);
+    if (next === null) {
+      return '';
+    }
+    const token = next[1]!.replace(/^["']|["']$/g, '');
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      out = out.slice(next[0].length).trim();
+      continue;
+    }
+    if (token.startsWith('--')) {
+      out = out.slice(next[0].length).trim();
+      if (!token.includes('=') && /^(?:--unset|--chdir|--split-string)$/.test(token)) {
+        const arg = /^([^\s]+)/.exec(out);
+        if (arg !== null) {
+          out = out.slice(arg[0].length).trim();
+        }
+      }
+      continue;
+    }
+    if (/^-[A-Za-z]/.test(token)) {
+      out = out.slice(next[0].length).trim();
+      if (/^-(?:u|C|S)$/.test(token)) {
+        const arg = /^([^\s]+)/.exec(out);
+        if (arg !== null) {
+          out = out.slice(arg[0].length).trim();
+        }
+      }
+      continue;
+    }
+    break;
+  }
+  return out;
+}
+
 export function headOf(segment: string): string {
   const stripped = stripAssignments(segment);
   const first = /^([^\s]+)/.exec(stripped);
@@ -328,33 +428,19 @@ export function headOf(segment: string): string {
   // then resolve any remaining path prefix to its basename so `/bin/cat
   // .env` matches the same way bare `cat .env` does. Wrapper FLAGS (e.g.
   // `sudo -u root`) end the unwrapping; the denylist stays a heuristic layer,
-  // not a shell parser.
-  const WRAPPERS = new Set([
-    'sudo',
-    'command',
-    'exec',
-    'builtin',
-    'nice',
-    'nohup',
-    'xargs',
-    'env',
-    // Windows shells are wrappers in the same sense: the inner head
-    // (`type .env`, `Get-Content .env`) is what reads. `/c`, `-c`,
-    // `-Command` carry flags, so the flag rule below ends unwrapping after
-    // one hop — the dashCPayload recursion covers the quoted-payload forms.
-    'cmd',
-    'cmd.exe',
-    'powershell',
-    'powershell.exe',
-    'pwsh',
-  ]);
+  // not a shell parser. H2: `env -i cat .env` strips env flags before the
+  // inner command head is resolved.
   for (;;) {
     const bare = head.replace(/^["']|["']$/g, '');
     if (!WRAPPERS.has(bare)) {
       break;
     }
     let rest = stripped.slice(stripped.indexOf(bare) + bare.length).trim();
-    rest = stripAssignments(rest);
+    if (bare === 'env') {
+      rest = stripEnvInvocationPrefix(rest);
+    } else {
+      rest = stripAssignments(rest);
+    }
     const next = /^([^\s]+)/.exec(rest);
     if (next === null) {
       break; // bare wrapper word: leave it for its own checks
@@ -406,6 +492,101 @@ export function dashCPayload(segment: string): string | null {
   // A payload may wear one outer layer of quotes: sh -c 'cat .env'
   const unquoted = raw.replace(/^['"]|['"]$/g, '');
   return unquoted === '' ? null : unquoted;
+}
+
+/** Read one shell argument (quoted or bare word) from the front of `s`. */
+export function readShellArgument(s: string): { value: string; rest: string } | null {
+  const trimmed = s.trimStart();
+  if (trimmed === '') {
+    return null;
+  }
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'") {
+    let i = 1;
+    let raw = '';
+    while (i < trimmed.length) {
+      if (trimmed[i] === '\\' && quote === '"') {
+        if (i + 1 < trimmed.length) {
+          raw += trimmed[i + 1];
+          i += 2;
+          continue;
+        }
+      }
+      if (trimmed[i] === quote) {
+        return { value: raw, rest: trimmed.slice(i + 1) };
+      }
+      raw += trimmed[i]!;
+      i++;
+    }
+    return { value: raw, rest: '' };
+  }
+  const word = /^(\S+)/.exec(trimmed);
+  if (word === null) {
+    return null;
+  }
+  return { value: word[1]!, rest: trimmed.slice(word[0].length) };
+}
+
+/** Extract the script argument from `sh -c '…'` / `bash -c "…"`. */
+export function extractShellPayload(segment: string): string | null {
+  const stripped = stripAssignments(segment.trim());
+  const first = /^([^\s]+)/.exec(stripped);
+  if (first === null) {
+    return null;
+  }
+  const head = first[1]!.replace(/^["']|["']$/g, '').split('/').pop() ?? '';
+  if (!SHELL_INVOKERS.has(head)) {
+    return null;
+  }
+  let rest = stripped.slice(first[0].length).trim();
+  while (rest !== '') {
+    const flag = /^(-[^\s=]+(?:=[^\s]+)?|--[^\s=]+(?:=[^\s]+)?)\s*/.exec(rest);
+    if (flag === null) {
+      break;
+    }
+    const flagToken = flag[1]!;
+    rest = rest.slice(flag[0].length);
+    if (flagToken === '-c' || flagToken === '--command') {
+      const arg = readShellArgument(rest);
+      return arg?.value ?? null;
+    }
+    if (/^-(?:u|C|S)$/.test(flagToken) || /^(?:--unset|--chdir|--split-string)$/.test(flagToken)) {
+      const arg = readShellArgument(rest);
+      if (arg === null) {
+        return null;
+      }
+      rest = arg.rest;
+    }
+  }
+  return null;
+}
+
+export interface ShellNestingResult {
+  exceeded: boolean;
+  payloads: string[];
+}
+
+/** S2: walk nested shell -c payloads; deny when depth exceeds MAX_PAYLOAD_DEPTH. */
+export function analyzeShellNesting(command: string, depth: number): ShellNestingResult {
+  if (depth > MAX_PAYLOAD_DEPTH) {
+    return { exceeded: true, payloads: [] };
+  }
+
+  const payloads: string[] = [];
+  for (const rawSegment of splitCommand(command)) {
+    const segment = stripAssignments(rawSegment);
+    const payload = extractShellPayload(segment);
+    if (payload === null || payload === '') {
+      continue;
+    }
+    payloads.push(payload);
+    const inner = analyzeShellNesting(payload, depth + 1);
+    if (inner.exceeded) {
+      return { exceeded: true, payloads: [...payloads, ...inner.payloads] };
+    }
+    payloads.push(...inner.payloads);
+  }
+  return { exceeded: false, payloads };
 }
 
 export function isSecretShapedPattern(pattern: string): boolean {
@@ -508,6 +689,13 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
           'Use `env_describe` for status or `env_verify` to test the key.',
       };
     }
+    if (path !== undefined && isEnvSchemaJsoncPath(path)) {
+      const cwd = context?.cwd ?? process.cwd();
+      const resolved = resolveFilePath(path, cwd);
+      if (envSchemaJsoncHasHighConfidenceSecret(resolved)) {
+        return { allow: false, reason: ENV_SCHEMA_SECRET_DENY_REASON };
+      }
+    }
     return { allow: true };
   }
 
@@ -560,7 +748,26 @@ export function decide(call: ToolCall, context?: PreToolUseContext): Decision {
   return { allow: true };
 }
 
-export function decideBash(command: string, declared: Set<string>, depth = 0): Decision {
+export function decideBash(command: string, declared: Set<string>): Decision {
+  const nesting = analyzeShellNesting(command, 0);
+  if (nesting.exceeded) {
+    return {
+      allow: false,
+      reason: 'envseal hook: command nesting too deep',
+    };
+  }
+
+  for (const payload of nesting.payloads) {
+    const inner = decideBashSegments(payload, declared);
+    if (!inner.allow) {
+      return inner;
+    }
+  }
+
+  return decideBashSegments(command, declared);
+}
+
+function decideBashSegments(command: string, declared: Set<string>, depth = 0): Decision {
   const commands = splitCommand(command);
   // Accumulator for the interpreter rule: once an interpreter head is seen,
   // later paren-fragments of its quoted payload are re-tested against this
@@ -684,7 +891,7 @@ export function decideBash(command: string, declared: Set<string>, depth = 0): D
         }
       }
       if (payload !== null) {
-        const nested = decideBash(payload, declared, depth + 1);
+        const nested = decideBashSegments(payload, declared, depth + 1);
         if (!nested.allow) {
           return { allow: false, reason: nested.reason };
         }
@@ -952,6 +1159,21 @@ export interface PreToolUseHookOutput {
   };
 }
 
+/**
+ * The decision an internal error falls back to. Fail-open unless
+ * ENVSEAL_HOOK_FAIL_CLOSED is set to exactly "1" — see the failure-modes
+ * comment at the top of this file. Never embeds error detail in the reason:
+ * errors and payloads can carry secret-shaped text.
+ */
+export function internalErrorDecision(errorOrSetting?: unknown): Decision {
+  const setting =
+    typeof errorOrSetting === 'string' ? errorOrSetting : process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+  if (setting === '1') {
+    return { allow: false, reason: 'envseal hook failed closed by policy' };
+  }
+  return { allow: true };
+}
+
 export function toHookOutput(decision: Decision): PreToolUseHookOutput {
   return {
     hookSpecificOutput: {
@@ -979,20 +1201,6 @@ const DEFAULT_IO: RunIo = {
   error: (line) => process.stderr.write(line),
 };
 
-/**
- * The decision an internal error falls back to. Fail-open unless
- * ENVSEAL_HOOK_FAIL_CLOSED is set to exactly "1" — see the failure-modes
- * comment at the top of this file. Never embeds error detail in the reason:
- * errors and payloads can carry secret-shaped text.
- */
-export function internalErrorDecision(failClosed?: string): Decision {
-  const setting = failClosed ?? process.env.ENVSEAL_HOOK_FAIL_CLOSED;
-  if (setting === '1') {
-    return { allow: false, reason: 'envseal hook failed closed by policy' };
-  }
-  return { allow: true };
-}
-
 export function run(io: RunIo = DEFAULT_IO): Promise<void> {
   return io
     .read()
@@ -1001,7 +1209,8 @@ export function run(io: RunIo = DEFAULT_IO): Promise<void> {
       const call = normalizePayload(p);
       const root = typeof p.cwd === 'string' ? p.cwd : process.cwd();
       const declaredSecrets = loadDeclaredSecrets(findProjectRoot(root));
-      return toHookOutput(decide(call, { declaredSecrets }));
+      const decision = decide(call, { declaredSecrets, cwd: root });
+      return toHookOutput(decision);
     })
     .then((result) => {
       io.write(result);

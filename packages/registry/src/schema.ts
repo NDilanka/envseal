@@ -20,7 +20,27 @@ const ProviderKeySchema = z.object({
     headerTemplate: z.record(z.string()),
     expectStatus: z.array(z.number().int()).optional(),
   }).optional(),
-}).strict();
+})
+  .strict()
+  .superRefine((key, ctx) => {
+    if (!key.verify) {
+      return;
+    }
+    if (!key.verify.url.startsWith('https://')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['verify', 'url'],
+        message: 'verify.url must start with https://',
+      });
+    }
+    if (key.verify.url.includes('{{value}}')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['verify', 'url'],
+        message: 'verify.url must not contain {{value}}',
+      });
+    }
+  });
 
 const ProviderSchema = z.object({
   id: z.string(),

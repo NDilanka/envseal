@@ -7,7 +7,7 @@
       "envVar": "CLOUDFLARE_API_TOKEN",
       "description": "Cloudflare API token",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{40,}$",
+        "pattern": "^[A-Za-z0-9_-]{40,256}$",
         "minLength": 40,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

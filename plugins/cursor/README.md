@@ -12,30 +12,42 @@ advisory — it reduces accidents, it cannot block them.
 
 ## Install
 
-1. **MCP server.** Copy `mcp.json` to `.cursor/mcp.json` at your project root for
-   a project-scoped server, or to `~/.cursor/mcp.json` for every project:
+```sh
+npm install -D @envseal/cli
+npx envseal init
+# or: npx envseal init --host cursor
+```
 
-   ```sh
-   cp plugins/cursor/mcp.json .cursor/mcp.json
+That is the primary path. `init` writes project-scoped `.cursor/mcp.json` and
+`.cursor/rules/envseal.mdc`. Do not copy these files by hand, and do not put
+envseal in `~/.cursor/mcp.json` — Cursor launches that process with `cwd` =
+your home directory, which is not a project.
+
+1. **MCP server.** `envseal init` merges this snippet (POSIX shown; Windows
+   gets `"command": "npx.cmd"`). Cursor does not use `node_modules/.bin`, so
+   `npx -y @envseal/mcp-server` is the launch that works without a global
+   install. `--project` is not written: project MCP already has the workspace
+   as cwd.
+
+   ```json
+   {
+     "mcpServers": {
+       "envseal-mcp": {
+         "command": "npx",
+         "args": ["-y", "@envseal/mcp-server"]
+       }
+     }
+   }
    ```
 
-   The `envseal-mcp` command must be on your `PATH` (it ships with `@envseal/mcp-server`,
-   which is installed as a dependency of `@envseal/cli`). If you run from a monorepo
-   checkout, point `command` at `packages/mcp-server/dist/bin.js` and add
-   `"args": ["--project", "<abs path>"]` if the workspace root is not the MCP cwd.
+`init` always merges Layer 1 `AGENTS.md`. Reload MCP (`Settings → MCP` shows the
+connection status). `envseal doctor` reports `Host: Cursor (Tier B)` and fails if
+`envseal-mcp` is missing from `.cursor/mcp.json`. Re-run `envseal init` to merge
+it.
 
-2. **Restart the MCP servers** (Cursor: `Settings → MCP` shows the connection status).
-
-3. **Rules.** Copy `rules/envseal.mdc` into `.cursor/rules/` (or `~/.cursor/rules/`
-   to apply globally):
-
-   ```sh
-   mkdir -p .cursor/rules && cp plugins/cursor/rules/envseal.mdc .cursor/rules/
-   ```
-
-4. **Sink.** Because Cursor is Tier B, set the `keychain` sink (see below).
-
-5. **Verify.** Run `envseal doctor` — it should report `Host: Cursor (Tier B)`.
+From a monorepo checkout you can point `command` at
+`node` + `packages/mcp-server/dist/bin.js` instead of npx; `init` will not
+overwrite that customization.
 
 ## Keychain recommendation (Tier B)
 

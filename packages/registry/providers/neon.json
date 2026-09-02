@@ -17,7 +17,7 @@
       "envVar": "NEON_API_KEY",
       "description": "Neon API key",
       "format": {
-        "pattern": "^[A-Za-z0-9_-]{32,}$",
+        "pattern": "^[A-Za-z0-9_-]{32,256}$",
         "minLength": 32,
         "example": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
       },

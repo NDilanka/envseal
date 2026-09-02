@@ -4,35 +4,44 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory rules file |
-| **Config file** | `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global) |
+| **Config file** | `.cursor/mcp.json` (project only) |
 
 Cursor is **Tier B**: it speaks MCP but has no interception hooks. The rules
-file (`plugins/cursor/rules/envseal.mdc`) is advisory — it reduces accidents,
+file (written to `.cursor/rules/envseal.mdc`) is advisory — it reduces accidents,
 it cannot block them.
 
 ## Install
 
 ```sh
-mkdir -p .cursor/rules
-cp plugins/cursor/mcp.json .cursor/mcp.json
-cp plugins/cursor/rules/envseal.mdc .cursor/rules/
+npm install -D @envseal/cli
+npx envseal init
+# or, if this project has no `.cursor/` marker yet:
+npx envseal init --host cursor
 ```
 
-Project-scoped `.cursor/mcp.json`:
+`init` merges Layer 1 `AGENTS.md`, merges `envseal-mcp` into **project**
+`.cursor/mcp.json` (other MCP servers are left intact), and copies the advisory
+rules file if it is absent. It never writes `~/.cursor/mcp.json`: Cursor starts
+a user-global MCP server with `cwd` set to the home directory, and `envseal-mcp`
+then exits with `no project found`.
+
+Reload MCP in **Settings → MCP**. `envseal doctor` reports `Host: Cursor
+(Tier B)` and fails if `.cursor/mcp.json` has no `envseal-mcp`.
+
+Project-scoped `.cursor/mcp.json` (POSIX). On Windows, `envseal init` writes
+`"command": "npx.cmd"` instead of `"npx"` — Cursor does not search
+`node_modules/.bin`, so a bare `envseal-mcp` command will not start.
 
 ```json
 {
   "mcpServers": {
     "envseal-mcp": {
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   }
 }
 ```
-
-Restart Cursor, then `Settings → MCP` should show `envseal-mcp` connected.
-`envseal doctor` should report `Host: Cursor (Tier B)`.
 
 ## Keychain recommendation (Tier B)
 

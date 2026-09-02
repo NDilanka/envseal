@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { asSecret, SepError } from '@envseal/protocol';
@@ -11,6 +11,7 @@ describe('sinks', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'envseal-test-'));
+    writeFileSync(join(tmpDir, '.gitignore'), '.env\n');
   });
 
   afterEach(() => {

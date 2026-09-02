@@ -18,18 +18,22 @@ catastrophic. The config and recipe below are written around that fact.
 
 ## Install
 
-1. Copy `.aider.conf.yml` to your project root (or merge the `read` list into
-   your existing config).
+```sh
+npm install -D @envseal/cli
+npx envseal init --host aider
+```
 
-2. Make sure `envseal` is on your `PATH` (`npm i -g @envseal/cli`).
+`init` merges Layer 1 `AGENTS.md` and this `.aider.conf.yml` so `.env` is not
+on `read:`. Re-running is idempotent and will strip `.env` from an existing
+`read` list.
 
-3. In an Aider session, use the `/run` command:
+In an Aider session, use the `/run` command:
 
-   ```
-   /run envseal ensure
-   /run envseal run -- pytest
-   /run envseal doctor
-   ```
+```
+/run envseal ensure
+/run envseal run -- pytest
+/run envseal doctor
+```
 
 ## Shell recipe (for hooks, scripts, CI)
 

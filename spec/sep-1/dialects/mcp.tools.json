@@ -44,7 +44,8 @@
                 "type": "object",
                 "properties": {
                   "pattern": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 256
                   },
                   "minLength": {
                     "type": "integer"
@@ -273,7 +274,7 @@
   },
   {
     "name": "env_revoke",
-    "description": "Removes stored credentials. Records in the audit log and emits the provider rotation URL so you can help the user invalidate the old key.",
+    "description": "Removes stored credentials after user confirmation. Records in the audit log and emits the provider rotation URL so you can help the user invalidate the old key.",
     "inputSchema": {
       "type": "object",
       "properties": {

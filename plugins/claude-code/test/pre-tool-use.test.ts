@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   normalizePayload,
   isDeniedSecretPath,
@@ -13,6 +16,10 @@ import {
   internalErrorDecision,
   run,
   toHookOutput,
+  analyzeShellNesting,
+  MAX_PAYLOAD_DEPTH,
+  stripEnvInvocationPrefix,
+  ENV_SCHEMA_SECRET_DENY_REASON,
 } from '../hooks/pre-tool-use.js';
 
 describe('pre-tool-use hook', () => {
@@ -244,6 +251,23 @@ describe('pre-tool-use hook', () => {
   });
 
   describe('decide - file operations', () => {
+    const manifestSentinel =
+      'sk-proj-FAKE7Qm2Xp9Lz4Rv8Nc3Bd6Hk1Ws5Yt0Ju7Gi2Ae4Of6Pl9Zx3Cn8Mb';
+    let manifestTmpDir: string | undefined;
+
+    afterEach(() => {
+      if (manifestTmpDir !== undefined) {
+        rmSync(manifestTmpDir, { recursive: true, force: true });
+        manifestTmpDir = undefined;
+      }
+    });
+
+    function writeManifest(content: string): string {
+      manifestTmpDir = mkdtempSync(join(tmpdir(), 'envseal-manifest-'));
+      writeFileSync(join(manifestTmpDir, 'env.schema.jsonc'), content, 'utf8');
+      return manifestTmpDir;
+    }
+
     it('denies Read .env', () => {
       const decision = decide({ tool: 'Read', path: '.env' });
       expect(decision.allow).toBe(false);
@@ -256,7 +280,28 @@ describe('pre-tool-use hook', () => {
       expect(decision.allow).toBe(true);
     });
 
-    it('allows Read env.schema.jsonc', () => {
+    it('allows Read env.schema.jsonc when the file is clean', () => {
+      const cwd = writeManifest('{\n  "version": 1,\n  "entries": []\n}\n');
+      const decision = decide(
+        { tool: 'Read', path: 'env.schema.jsonc' },
+        { cwd },
+      );
+      expect(decision.allow).toBe(true);
+    });
+
+    it('denies Read env.schema.jsonc when comments contain secret-shaped text', () => {
+      const cwd = writeManifest(`// ${manifestSentinel}\n{\n  "version": 1,\n  "entries": []\n}\n`);
+      const decision = decide(
+        { tool: 'Read', path: 'env.schema.jsonc' },
+        { cwd },
+      );
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toBe(ENV_SCHEMA_SECRET_DENY_REASON);
+      expect(decision.reason ?? '').not.toContain(manifestSentinel);
+      expect(decision.reason ?? '').not.toContain('sk-proj-');
+    });
+
+    it('allows Read env.schema.jsonc when the file is missing', () => {
       const decision = decide({ tool: 'Read', path: 'env.schema.jsonc' });
       expect(decision.allow).toBe(true);
     });
@@ -321,6 +366,95 @@ describe('pre-tool-use hook', () => {
     it('denies grep -r with secret pattern', () => {
       const decision = decide({ tool: 'Bash', command: 'grep -r "sk-" .' });
       expect(decision.allow).toBe(false);
+    });
+
+    // H1–H3 + S2: env-file read bypasses closed in the security hardening pass.
+    const secretReadBypasses: Array<{ label: string; command: string }> = [
+      { label: 'source .env', command: 'source .env' },
+      { label: 'dot-source .env', command: '. ./.env' },
+      { label: 'source .env.local', command: 'source .env.local' },
+      { label: 'env -i cat .env', command: 'env -i cat .env' },
+      { label: 'env -u PATH cat .env', command: 'env -u PATH cat .env' },
+      { label: 'busybox cat .env', command: 'busybox cat .env' },
+    ];
+
+    for (const bypass of secretReadBypasses) {
+      it(`denies ${bypass.label}`, () => {
+        const decision = decide({ tool: 'Bash', command: bypass.command });
+        expect(decision.allow, bypass.command).toBe(false);
+        expect(decision.reason ?? '').toMatch(/env_describe|env_verify/);
+      });
+    }
+
+    it('denies deeply nested sh -c beyond MAX_PAYLOAD_DEPTH', () => {
+      let command = 'cat .env';
+      for (let i = 0; i < MAX_PAYLOAD_DEPTH + 1; i++) {
+        command = `sh -c ${JSON.stringify(command)}`;
+      }
+      expect(analyzeShellNesting(command, 0).exceeded).toBe(true);
+      const decision = decide({ tool: 'Bash', command });
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toBe('envseal hook: command nesting too deep');
+    });
+
+    it('allows echo hello', () => {
+      const decision = decide({ tool: 'Bash', command: 'echo hello' });
+      expect(decision.allow).toBe(true);
+    });
+  });
+
+  describe('internalErrorDecision (S1)', () => {
+    const prior = process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+
+    afterEach(() => {
+      if (prior === undefined) {
+        delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      } else {
+        process.env.ENVSEAL_HOOK_FAIL_CLOSED = prior;
+      }
+    });
+
+    it('defaults to allow on internal error (fail-open)', () => {
+      delete process.env.ENVSEAL_HOOK_FAIL_CLOSED;
+      const decision = internalErrorDecision(new Error('manifest unreadable'));
+      expect(decision.allow).toBe(true);
+      expect(decision.reason).toBeUndefined();
+    });
+
+    it('denies when ENVSEAL_HOOK_FAIL_CLOSED=1', () => {
+      process.env.ENVSEAL_HOOK_FAIL_CLOSED = '1';
+      const decision = internalErrorDecision(new Error('manifest unreadable'));
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toBe('envseal hook failed closed by policy');
+    });
+  });
+
+  describe('env wrapper stripping (H2)', () => {
+    it('unwraps env -i to inner command head', () => {
+      expect(headOf('env -i cat .env')).toBe('cat');
+    });
+
+    it('unwraps env -u PATH to inner command head', () => {
+      expect(headOf('env -u PATH cat .env')).toBe('cat');
+    });
+
+    it('stripEnvInvocationPrefix removes flags before command', () => {
+      expect(stripEnvInvocationPrefix('-i cat .env')).toBe('cat .env');
+      expect(stripEnvInvocationPrefix('-u PATH cat .env')).toBe('cat .env');
+    });
+  });
+
+  describe('shell nesting (S2)', () => {
+    it('MAX_PAYLOAD_DEPTH is 3', () => {
+      expect(MAX_PAYLOAD_DEPTH).toBe(3);
+    });
+
+    it('allows shallow sh -c nesting at the cap', () => {
+      let command = 'cat .env';
+      for (let i = 0; i < MAX_PAYLOAD_DEPTH; i++) {
+        command = `sh -c ${JSON.stringify(command)}`;
+      }
+      expect(analyzeShellNesting(command, 0).exceeded).toBe(false);
     });
   });
 

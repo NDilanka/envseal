@@ -4,7 +4,7 @@
 |---|---|
 | **Binding tier** | 1 — MCP over stdio |
 | **Protection tier** | **B** — protocol + advisory instructions |
-| **Config file** | `github.copilot.mcp` VS Code setting, plus `AGENTS.md` |
+| **Config file** | Project `.vscode/settings.json` `github.copilot.mcp`, plus `AGENTS.md` |
 
 Copilot (VS Code Copilot Chat / Copilot CLI agent) is **Tier B**: it reads
 `AGENTS.md` instruction files — which is the advisory guardrail — and recent
@@ -18,28 +18,33 @@ VS Code/Copilot version's documentation.]`
 
 ## Install
 
-VS Code `settings.json`:
+```sh
+npm install -D @envseal/cli
+npx envseal init
+# or:
+npx envseal init --host copilot
+```
+
+`init` always merges Layer 1 `AGENTS.md` (Copilot reads it by default) and
+merges `github.copilot.mcp` into **project** `.vscode/settings.json`:
 
 ```json
 {
   "github.copilot.mcp": [
     {
       "name": "envseal-mcp",
-      "command": "envseal-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@envseal/mcp-server"]
     }
   ]
 }
 ```
 
-And, for every Copilot surface, add the instruction file
-(`plugins/generic/AGENTS.md`) to your project root — Copilot reads `AGENTS.md`
-by default. This is the advisory layer that makes Copilot defensibly `B`.
 `envseal doctor` reports `Host: GitHub Copilot (Tier B)` when
 `.vscode/settings.json` mentions Copilot (the `github.copilot.*` settings
 above qualify). Copilot has no unique project directory of its own, so without
 that settings marker doctor falls through to `Host: Generic Agent (Tier B)`
-via the `AGENTS.md` file above.
+via `AGENTS.md`.
 
 ## Keychain recommendation (Tier B)
 

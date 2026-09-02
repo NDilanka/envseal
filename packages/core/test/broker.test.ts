@@ -43,6 +43,7 @@ describe('Broker', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'envseal-test-'));
+    writeFileSync(join(tmpDir, '.gitignore'), '.env\n');
   });
 
   afterEach(() => {
@@ -187,7 +188,7 @@ describe('Broker', () => {
           key: 'API_KEY',
           description: 'API key',
           format: {
-            pattern: '^sk-[A-Za-z0-9]{20,}$',
+            pattern: '^sk-[A-Za-z0-9]{20,256}$',
             example: 'sk-XXXXXXXXXXXXXXXXXXXX',
           },
         },
@@ -260,6 +261,145 @@ describe('Broker', () => {
     const entered = prompter.secretValue;
     expect(entered.length).toBeGreaterThan(0);
     expect(entered.every((b) => b === 0)).toBe(true);
+
+    broker.dispose();
+  });
+
+  it('use rejects undeclared keys with SEP_NOT_DECLARED', async () => {
+    const broker = new Broker({ root: tmpDir });
+    await broker.declare({
+      entries: [{ key: 'DECLARED_KEY', description: 'declared' }],
+    });
+
+    try {
+      await broker.use({ keys: ['UNDECLARED_KEY'], command: ['echo', 'hi'] });
+      expect.fail('Should have thrown SEP_NOT_DECLARED');
+    } catch (err) {
+      expect(err instanceof SepError).toBe(true);
+      if (err instanceof SepError) {
+        expect(err.code).toBe('SEP_NOT_DECLARED');
+      }
+    }
+
+    broker.dispose();
+  });
+
+  it('use rejects declared keys with no stored value using SEP_KEYS_MISSING', async () => {
+    const broker = new Broker({ root: tmpDir });
+    await broker.declare({
+      entries: [{ key: 'MISSING_KEY', description: 'declared but empty' }],
+    });
+
+    try {
+      await broker.use({ keys: ['MISSING_KEY'], command: ['echo', 'hi'] });
+      expect.fail('Should have thrown SEP_KEYS_MISSING');
+    } catch (err) {
+      expect(err instanceof SepError).toBe(true);
+      if (err instanceof SepError) {
+        expect(err.code).toBe('SEP_KEYS_MISSING');
+        expect(err.userMessage).toContain('MISSING_KEY');
+        expect(err.userMessage).not.toContain('secret');
+      }
+    }
+
+    broker.dispose();
+  });
+
+  it('use refuses a partial subset and does not reach confirmation', async () => {
+    let confirmCalled = false;
+    const broker = new Broker({
+      root: tmpDir,
+      onConfirm: async () => {
+        confirmCalled = true;
+        return true;
+      },
+    });
+    await broker.declare({
+      entries: [
+        { key: 'KEY_A', description: 'first' },
+        { key: 'KEY_B', description: 'second' },
+      ],
+    });
+    const paths = projectPaths(tmpDir);
+    writeFileSync(paths.dotenv, 'KEY_A=value-a\n', 'utf8');
+
+    try {
+      await broker.use({ keys: ['KEY_A', 'KEY_B'], command: ['echo', 'hi'] });
+      expect.fail('Should have thrown SEP_KEYS_MISSING');
+    } catch (err) {
+      expect(err instanceof SepError).toBe(true);
+      if (err instanceof SepError) {
+        expect(err.code).toBe('SEP_KEYS_MISSING');
+        expect(err.userMessage).toContain('KEY_B');
+      }
+    }
+    expect(confirmCalled).toBe(false);
+
+    broker.dispose();
+  });
+
+  it('revoke without onRevokeConfirm fails closed', async () => {
+    const broker = new Broker({ root: tmpDir });
+    await broker.declare({
+      entries: [{ key: 'REVOKE_KEY', description: 'to revoke' }],
+    });
+    const paths = projectPaths(tmpDir);
+    writeFileSync(paths.dotenv, 'REVOKE_KEY=secret-value\n', 'utf8');
+
+    try {
+      await broker.revoke({ keys: ['REVOKE_KEY'] });
+      expect.fail('Should have thrown SEP_CONFIRMATION_DENIED');
+    } catch (err) {
+      expect(err instanceof SepError).toBe(true);
+      if (err instanceof SepError) {
+        expect(err.code).toBe('SEP_CONFIRMATION_DENIED');
+      }
+    }
+
+    expect(readFileSync(paths.dotenv, 'utf8')).toContain('REVOKE_KEY');
+
+    broker.dispose();
+  });
+
+  it('revoke with approving onRevokeConfirm removes stored values', async () => {
+    const broker = new Broker({
+      root: tmpDir,
+      onRevokeConfirm: async () => true,
+    });
+    await broker.declare({
+      entries: [{ key: 'REVOKE_KEY', description: 'to revoke' }],
+    });
+    const paths = projectPaths(tmpDir);
+    writeFileSync(paths.dotenv, 'REVOKE_KEY=secret-value\n', 'utf8');
+
+    const results = await broker.revoke({ keys: ['REVOKE_KEY'] });
+    expect(results[0]?.removed).toBe(true);
+    expect(readFileSync(paths.dotenv, 'utf8')).not.toContain('REVOKE_KEY');
+
+    broker.dispose();
+  });
+
+  it('revoke with denying onRevokeConfirm leaves stored values', async () => {
+    const broker = new Broker({
+      root: tmpDir,
+      onRevokeConfirm: async () => false,
+    });
+    await broker.declare({
+      entries: [{ key: 'REVOKE_KEY', description: 'to revoke' }],
+    });
+    const paths = projectPaths(tmpDir);
+    writeFileSync(paths.dotenv, 'REVOKE_KEY=secret-value\n', 'utf8');
+
+    try {
+      await broker.revoke({ keys: ['REVOKE_KEY'] });
+      expect.fail('Should have thrown SEP_CONFIRMATION_DENIED');
+    } catch (err) {
+      expect(err instanceof SepError).toBe(true);
+      if (err instanceof SepError) {
+        expect(err.code).toBe('SEP_CONFIRMATION_DENIED');
+      }
+    }
+    expect(readFileSync(paths.dotenv, 'utf8')).toContain('REVOKE_KEY');
 
     broker.dispose();
   });

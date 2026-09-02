@@ -6,10 +6,11 @@ import {
   isSepError,
 } from '../src/errors.js';
 import type { SepErrorCode } from '../src/errors.js';
+import { isLinearishRegex } from '../src/schemas.js';
 
 describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
   it('declares a default for every error code', () => {
-    expect(SEP_ERROR_CODES.length).toBe(16);
+    expect(SEP_ERROR_CODES.length).toBe(18);
     for (const code of SEP_ERROR_CODES) {
       const defaults = SEP_ERROR_DEFAULTS[code];
       expect(defaults).toBeDefined();
@@ -61,11 +62,40 @@ describe('SEP_ERROR_DEFAULTS exhaustiveness', () => {
           return true;
         case 'SEP_EGRESS_DENIED':
           return false;
+        case 'SEP_PATTERN_UNSAFE':
+          return false;
+        case 'SEP_KEYS_MISSING':
+          return false;
       }
     };
     for (const code of SEP_ERROR_CODES) {
       expect(retriable(code)).toBe(SEP_ERROR_DEFAULTS[code].retriable);
     }
+  });
+});
+
+describe('SEP_ERROR_CODES', () => {
+  it('includes pattern and missing-key codes for H6/H9/H12', () => {
+    expect(SEP_ERROR_CODES).toContain('SEP_PATTERN_UNSAFE');
+    expect(SEP_ERROR_CODES).toContain('SEP_KEYS_MISSING');
+    expect(SEP_ERROR_DEFAULTS.SEP_PATTERN_UNSAFE.retriable).toBe(false);
+    expect(SEP_ERROR_DEFAULTS.SEP_KEYS_MISSING.retriable).toBe(false);
+  });
+
+  it('includes the egress allowlist code', () => {
+    expect(SEP_ERROR_CODES).toContain('SEP_EGRESS_DENIED');
+    expect(SEP_ERROR_DEFAULTS.SEP_EGRESS_DENIED.retriable).toBe(false);
+  });
+});
+
+describe('isLinearishRegex', () => {
+  it('rejects oversized and nested-quantifier patterns', () => {
+    expect(isLinearishRegex('a'.repeat(10_000))).toBe(false);
+    expect(isLinearishRegex('(a+)+$')).toBe(false);
+  });
+
+  it('accepts bounded provider patterns', () => {
+    expect(isLinearishRegex('^sk-[A-Za-z0-9]{20,80}$')).toBe(true);
   });
 });
 

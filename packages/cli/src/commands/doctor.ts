@@ -1,13 +1,13 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { SepError } from '@envseal/protocol';
-import { loadManifest, projectPaths } from '@envseal/core';
+import { inspectDotenvGitSafety, loadManifest, projectPaths } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
 import { createBroker } from '../cli-utils.js';
 import { finish } from '../exit.js';
+import { inspectPrimaryHostWiring, wiringFailsDoctor } from '../host-wiring/inspect.js';
 
 export async function doctor(root: string, json: boolean): Promise<void> {
   try {
@@ -35,13 +35,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
 
     const gitignorePath = join(root, '.gitignore');
     const envPath = join(root, '.env');
-
-    // Check gitignore
-    let gitignoreCovers = false;
-    if (existsSync(gitignorePath)) {
-      const gitignoreContent = readFileSync(gitignorePath, 'utf-8');
-      gitignoreCovers = gitignoreContent.includes('.env');
-    }
+    const gitSafety = inspectDotenvGitSafety(projectPaths(root));
+    const gitignoreCovers = gitSafety.ignored;
+    const hookFailClosed = process.env.ENVSEAL_HOOK_FAIL_CLOSED === '1';
 
     // Check .env permissions
     let envFileOk = false;
@@ -52,6 +48,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
 
     const host = detectHost(root);
     const egress = manifest?.policy?.egress;
+    const inspection = inspectPrimaryHostWiring(root, host.id, { probe: true });
     const output = {
       projectRoot: root,
       manifestPath,
@@ -62,18 +59,30 @@ export async function doctor(root: string, json: boolean): Promise<void> {
         reason: host.reason,
         recommendation: host.recommendation,
       },
+      agentWiring: inspection.wiring,
       gitignore: {
         exists: existsSync(gitignorePath),
         covers: gitignoreCovers,
       },
       envFile: {
         exists: existsSync(envPath),
-        isTracked: false,
+        isTracked: gitSafety.tracked,
         permissionsOk: envFileOk,
       },
       egressPolicy: egress ?? { mode: 'warn', allow: [] },
+      hookFailClosed,
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
+      ...(inspection.mcp === undefined
+        ? {}
+        : {
+            mcp: {
+              wired: inspection.mcp.wired,
+              status: inspection.mcp.status,
+              message: inspection.mcp.message,
+              commandOk: inspection.mcp.commandOk,
+            },
+          }),
     };
 
     if (!json) {
@@ -81,9 +90,19 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       console.log(`Host: ${host.name} (Tier ${host.tier})`);
       console.log(`  ${host.reason}`);
       console.log(`  ${host.recommendation}`);
+      console.log(
+        `Agent wiring: MCP ${inspection.wiring.mcp}, instructions ${inspection.wiring.instructions}`,
+      );
+      if (inspection.notOotb) {
+        console.log('  This host is not OOTB (print-only MCP). Layer 1 AGENTS.md is the working path.');
+      }
+      console.log(`  ${inspection.message}`);
       console.log(`Gitignore covers .env: ${gitignoreCovers ? 'yes' : 'no'}`);
       console.log(
         `Egress policy: ${egress?.mode === 'allowlist' ? `allowlist (${egress.allow.length} allowed host${egress.allow.length === 1 ? '' : 's'})` : 'warn (default)'}`,
+      );
+      console.log(
+        `Hook on internal error: ${hookFailClosed ? 'fail-closed' : 'fail-open (default)'}`,
       );
       console.log(`Missing required keys: ${status.missingRequired.length}`);
       if (status.missingRequired.length > 0) {
@@ -95,8 +114,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       emit(json, '', output);
     }
 
-    // Exit with UNSATISFIED if required keys are missing
-    if (status.missingRequired.length > 0) {
+    if (status.missingRequired.length > 0 || wiringFailsDoctor(inspection)) {
       finish(EXIT.UNSATISFIED);
       return;
     }

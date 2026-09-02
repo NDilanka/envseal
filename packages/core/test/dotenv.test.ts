@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import fc from 'fast-check';
-import { parseDotenv, serializeDotenv, readDotenv, setDotenvValue, removeDotenvKey } from '../src/sinks/dotenv.js';
+import { parseDotenv, serializeDotenv, readDotenv, setDotenvValue, removeDotenvKey, inspectDotenvGitSafety } from '../src/sinks/dotenv.js';
 import { projectPaths } from '../src/paths.js';
 import { SepError } from '@envseal/protocol';
 
@@ -143,6 +143,24 @@ describe('dotenv', () => {
       expect(content).toContain('KEY2=value2');
     });
 
+    it('rewrites only the last duplicate assignment (dotenv last-wins)', () => {
+      // Windows CI seed 599909404: two identical `export W_=...` lines. The
+      // writer updates lastIndex only; an oracle that exempts only findIndex
+      // (the first hit) treats the rewritten last line as a non-surgical edit.
+      const paths = projectPaths(tmpDir);
+      writeFileSync(
+        paths.dotenv,
+        'export W_="value with spaces"\nexport W_="value with spaces"\n',
+        'utf8',
+      );
+
+      setDotenvValue(paths, 'W_', ' ', { allowUnsafe: true });
+
+      const content = readFileSync(paths.dotenv, 'utf8');
+      expect(content).toBe('export W_="value with spaces"\nexport W_=" "\n');
+      expect(readDotenv(paths).W_).toBe(' ');
+    });
+
     it('preserves CRLF line endings', () => {
       const paths = projectPaths(tmpDir);
       writeFileSync(paths.dotenv, 'KEY=value\r\n', 'utf8');
@@ -186,6 +204,64 @@ describe('dotenv', () => {
       }
       expect(caught, 'setDotenvValue must refuse a git-tracked .env').toBeInstanceOf(SepError);
       expect((caught as SepError).code).toBe('SEP_GITIGNORE_UNSAFE');
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      'tightens a world-readable .env to mode 0o600 after write',
+      () => {
+        const paths = projectPaths(tmpDir);
+        writeFileSync(paths.dotenv, 'KEY=value\n', { mode: 0o644 });
+        chmodSync(paths.dotenv, 0o644);
+
+        setDotenvValue(paths, 'KEY', 'updated', { allowUnsafe: true });
+
+        const mode = statSync(paths.dotenv).mode & 0o777;
+        expect(mode).toBe(0o600);
+      },
+    );
+
+    it('refuses write outside git when root has no .gitignore covering .env', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-nogit-'));
+      try {
+        const paths = projectPaths(bareDir);
+        let caught: unknown;
+        try {
+          setDotenvValue(paths, 'KEY', 'value');
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).toBeInstanceOf(SepError);
+        expect((caught as SepError).code).toBe('SEP_GITIGNORE_UNSAFE');
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
+    });
+
+    it('allows write outside git when .gitignore covers .env', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-gitignore-'));
+      try {
+        writeFileSync(join(bareDir, '.gitignore'), '.env\n');
+        const paths = projectPaths(bareDir);
+        setDotenvValue(paths, 'KEY', 'value');
+        expect(readFileSync(paths.dotenv, 'utf8')).toContain('KEY=value');
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
+    });
+
+    it('inspectDotenvGitSafety reports non-git dirs without throwing', () => {
+      const bareDir = mkdtempSync(join(tmpdir(), 'envseal-inspect-'));
+      try {
+        writeFileSync(join(bareDir, '.gitignore'), '.env\n');
+        const paths = projectPaths(bareDir);
+        expect(inspectDotenvGitSafety(paths)).toEqual({
+          insideGit: false,
+          tracked: false,
+          ignored: true,
+        });
+      } finally {
+        rmSync(bareDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -296,9 +372,13 @@ describe('dotenv', () => {
             // editor and trips no-irregular-whitespace. Stripping it matters — the
             // oracle previously failed a correct surgical write on BOM'd files.
             const assignmentRegex = /^\uFEFF?(?:export\s+)?([A-Z][A-Z0-9_]*)=/;
-            const originalAssignIdx = originalLines.findIndex((line) => {
+            // Last-wins writer rewrites the last matching assignment. Duplicate
+            // keys (legal in dotenv) must all be exempt from the identity check;
+            // findIndex only sees the first and fails Windows CI seed 599909404.
+            const rewritten = new Set<number>();
+            originalLines.forEach((line, i) => {
               const match = assignmentRegex.exec(line);
-              return match?.[1] === key;
+              if (match?.[1] === key) rewritten.add(i);
             });
 
             // A surgical write may append but must never drop lines. Without this
@@ -312,12 +392,11 @@ describe('dotenv', () => {
             }
 
             for (let i = 0; i < originalLines.length; i++) {
-              if (i !== originalAssignIdx) {
-                if (originalLines[i] !== newLines[i]) {
-                  throw new Error(
-                    `Line ${i} mismatch:\nOriginal: ${JSON.stringify(originalLines[i])}\nNew: ${JSON.stringify(newLines[i])}`
-                  );
-                }
+              if (rewritten.has(i)) continue;
+              if (originalLines[i] !== newLines[i]) {
+                throw new Error(
+                  `Line ${i} mismatch:\nOriginal: ${JSON.stringify(originalLines[i])}\nNew: ${JSON.stringify(newLines[i])}`
+                );
               }
             }
 

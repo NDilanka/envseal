@@ -20,11 +20,20 @@ recipe below.]`
 
 ## Install
 
+```sh
+npm install -D @envseal/cli
+npx envseal init
+```
+
+`init` merges `plugins/generic/AGENTS.md` into the project root (Layer 1).
+OpenHands stays deployment-dependent: the `envseal` binary must be reachable
+inside the sandbox, and `ensure` needs a TTY. There is no project MCP file
+`init` can write.
+
 1. Make `envseal` available where the agent's commands run
-   (`npm i -g @envseal/cli`).
-2. Add `plugins/generic/AGENTS.md` to the project root so OpenHands reads the
-   imperative rules (never read `.env`, never echo variables, use
-   `envseal ensure` / `envseal run --`).
+   (`npm i -D @envseal/cli` in the project the sandbox sees).
+2. `AGENTS.md` tells OpenHands the imperative rules (never read `.env`, never
+   echo variables, use `envseal ensure` / `envseal run --`).
 3. Give the agent a stable interactive path for `envseal ensure` when keys are
    missing (a terminal tool or configured user interaction); otherwise
    `ensure` fails with `no interactive surface` (exit 4), which is the correct,

@@ -7,7 +7,7 @@
       "envVar": "GITLAB_TOKEN",
       "description": "GitLab personal access token",
       "format": {
-        "pattern": "^glpat-[A-Za-z0-9_-]{20,}$",
+        "pattern": "^glpat-[A-Za-z0-9_-]{20,256}$",
         "prefix": "glpat-",
         "minLength": 20,
         "example": "glpat-XXXXXXXXXXXXXXXXXXXXXXXX"

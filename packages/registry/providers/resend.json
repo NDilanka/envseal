@@ -7,7 +7,7 @@
       "envVar": "RESEND_API_KEY",
       "description": "Resend email API key",
       "format": {
-        "pattern": "^re_[A-Za-z0-9_-]{32,}$",
+        "pattern": "^re_[A-Za-z0-9_-]{32,256}$",
         "prefix": "re_",
         "minLength": 32,
         "example": "re_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

@@ -1,3 +1,4 @@
+import { charsetClasses, shannonEntropy } from './entropy.js';
 import { WORDLIST_LOWER } from './wordlist.js';
 
 export interface ExclusionContext {
@@ -53,6 +54,8 @@ export function isExcluded(
  * never consults the exclusion list.
  */
 const MIN_GENERIC_LENGTH = 24;
+const MIN_ENTROPY = 3.5;
+const MIN_CHARSET_CLASSES = 2;
 
 function isNonSecretAssignment(candidate: string): boolean {
   const match = /^[A-Z][A-Z0-9_]{2,}=(.*)$/.exec(candidate);
@@ -126,10 +129,17 @@ function isDataUri(candidate: string, context: ExclusionContext): boolean {
   }
   return /data:[a-z0-9.+-]+\/[a-z0-9.+-]+(;[a-z0-9-]+=[a-z0-9-]+)*;base64,[A-Za-z0-9+/=]+$/.test(
     context.before,
+  ) || (
+    (context.before.endsWith(';base64,') || context.before.endsWith('base64,')) &&
+    /^[A-Za-z0-9+/=]*$/.test(candidate) &&
+    candidate.length % 4 === 0 &&
+    candidate.length > 0
   );
 }
 
 function isFilesystemPath(candidate: string): boolean {
+  if (/^\([^)]*[/\\][^)]*\)$/.test(candidate)) return true;
+  if (/\/[a-zA-Z0-9_./-]+:\d+(?::\d+)?$/.test(candidate)) return true;
   const hasPathSep = candidate.includes('/') || candidate.includes(String.fromCharCode(92));
   if (!hasPathSep) return false;
   const hasCredential = /[a-z][a-z0-9+.-]*:\/\/[^@]*:.*@/.test(candidate);
@@ -146,6 +156,9 @@ function isFilesystemPath(candidate: string): boolean {
 }
 
 function isPlainUrl(candidate: string): boolean {
+  if (/^(?:postgres|postgresql|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^@\s]+/i.test(candidate) && !candidate.includes('@')) {
+    return true;
+  }
   try {
     const url = new URL(candidate);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -202,17 +215,51 @@ function splitOnBoundaries(candidate: string): string[] {
   return result.filter((s) => s.length > 0);
 }
 
-function isCodeAdjacent(candidate: string, context: ExclusionContext): boolean {
-  const codeChars = /[{}();,:]/;
+/**
+ * High-entropy `[A-Za-z0-9]{32,}` blobs in JSON/JS (`{"key":"<secret>"}` or
+ * `{secret:<value>}`) are credentials, not identifier tokens. The generic
+ * scanner uses the same entropy/charset gates.
+ */
+function qualifiesAsGenericHighEntropy(candidate: string): boolean {
+  if (!/^[A-Za-z0-9]{32,}$/.test(candidate)) return false;
+  if (isIdentifierLike(candidate)) return false;
+  if (shannonEntropy(candidate) < MIN_ENTROPY) return false;
+  if (charsetClasses(candidate) < MIN_CHARSET_CLASSES) return false;
+  return true;
+}
+
+function isIdentifierLike(candidate: string): boolean {
+  if (candidate.startsWith('$')) return true;
+  if (isDictionaryText(candidate)) return true;
+  // Digits in a token point at key material, not a source-code identifier.
+  if (/\d/.test(candidate)) return false;
+  if (/^[a-z_$][\w$]*$/i.test(candidate) && /[a-z][A-Z]|[A-Z][a-z]|_/.test(candidate)) {
+    return true;
+  }
+  return /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/i.test(candidate);
+}
+
+function isAdjacentToCodeStructure(context: ExclusionContext): boolean {
+  const structural = /[{}(),:]/;
   if (context.before.length > 0) {
     const lastChar = context.before.at(-1);
-    if (lastChar !== undefined && codeChars.test(lastChar) && !/\s/.test(lastChar)) return true;
+    if (lastChar !== undefined && structural.test(lastChar) && !/\s/.test(lastChar)) {
+      return true;
+    }
   }
   if (context.after.length > 0) {
     const firstChar = context.after.at(0);
-    if (firstChar !== undefined && codeChars.test(firstChar) && !/\s/.test(firstChar)) return true;
+    if (firstChar !== undefined && structural.test(firstChar) && !/\s/.test(firstChar)) {
+      return true;
+    }
   }
   return false;
+}
+
+function isCodeAdjacent(candidate: string, context: ExclusionContext): boolean {
+  if (!isAdjacentToCodeStructure(context)) return false;
+  if (qualifiesAsGenericHighEntropy(candidate)) return false;
+  return isIdentifierLike(candidate);
 }
 
 

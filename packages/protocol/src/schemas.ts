@@ -1,5 +1,223 @@
 import { z } from 'zod';
 
+export const FORMAT_PATTERN_MAX_LENGTH = 256;
+export const FORMAT_PATTERN_MAX_QUANTIFIER = 256;
+
+type QuantifierResult = { ok: true; end: number } | { ok: false };
+
+function isQuantifierBrace(pattern: string, index: number): boolean {
+  return /^\{\d/.test(pattern.slice(index));
+}
+
+function parseQuantifier(pattern: string, start: number): QuantifierResult {
+  const ch = pattern[start];
+  if (ch === '+' || ch === '*' || ch === '?') {
+    return { ok: true, end: start + 1 };
+  }
+  if (ch !== '{' || !isQuantifierBrace(pattern, start)) {
+    return { ok: true, end: start };
+  }
+
+  const close = pattern.indexOf('}', start + 1);
+  if (close === -1) {
+    return { ok: false };
+  }
+  const body = pattern.slice(start + 1, close);
+  const comma = body.indexOf(',');
+  let minStr: string;
+  let maxStr: string | undefined;
+  if (comma === -1) {
+    minStr = body;
+    maxStr = undefined;
+  } else {
+    minStr = body.slice(0, comma);
+    maxStr = body.slice(comma + 1);
+  }
+  if (minStr !== '' && !/^\d+$/.test(minStr)) {
+    return { ok: false };
+  }
+  if (maxStr !== undefined && maxStr !== '' && !/^\d+$/.test(maxStr)) {
+    return { ok: false };
+  }
+
+  const min = minStr === '' ? 0 : Number(minStr);
+  const max = maxStr === undefined || maxStr === '' ? undefined : Number(maxStr);
+  if (!Number.isInteger(min) || min < 0) {
+    return { ok: false };
+  }
+  if (max !== undefined && (!Number.isInteger(max) || max < min)) {
+    return { ok: false };
+  }
+  if (min > FORMAT_PATTERN_MAX_QUANTIFIER) {
+    return { ok: false };
+  }
+  if (max === undefined && comma !== -1) {
+    return { ok: false };
+  }
+  if (max !== undefined && max > FORMAT_PATTERN_MAX_QUANTIFIER) {
+    return { ok: false };
+  }
+
+  return { ok: true, end: close + 1 };
+}
+
+function skipCharacterClass(pattern: string, start: number): number | null {
+  let i = start + 1;
+  if (pattern[i] === '^') {
+    i++;
+  }
+  while (i < pattern.length) {
+    if (pattern[i] === '\\') {
+      i += 2;
+      continue;
+    }
+    if (pattern[i] === ']') {
+      return i + 1;
+    }
+    i++;
+  }
+  return null;
+}
+
+function skipGroupHeader(pattern: string, start: number): number {
+  let i = start + 1;
+  if (pattern[i] !== '?') {
+    return i;
+  }
+  i++;
+  if (pattern[i] === ':') {
+    return i + 1;
+  }
+  if (pattern[i] === '<') {
+    i++;
+    if (pattern[i] === '=' || pattern[i] === '!') {
+      return i + 1;
+    }
+    return i;
+  }
+  if (pattern[i] === '=' || pattern[i] === '!') {
+    return i + 1;
+  }
+  while (i < pattern.length && /[a-z-]/.test(pattern[i]!)) {
+    i++;
+  }
+  if (pattern[i] === ':') {
+    return i + 1;
+  }
+  if (pattern[i] === ')') {
+    return i + 1;
+  }
+  return i;
+}
+
+function scanLinearishPattern(pattern: string): boolean {
+  const groupHasInnerQuantifier: boolean[] = [];
+
+  const markInnerQuantifier = (): void => {
+    if (groupHasInnerQuantifier.length > 0) {
+      groupHasInnerQuantifier[groupHasInnerQuantifier.length - 1] = true;
+    }
+  };
+
+  const afterAtom = (start: number, innerQuantified: boolean): number | null => {
+    const quantifier = parseQuantifier(pattern, start);
+    if (!quantifier.ok) {
+      return null;
+    }
+    if (quantifier.end > start) {
+      if (innerQuantified) {
+        return null;
+      }
+      markInnerQuantifier();
+    }
+    return quantifier.end;
+  };
+
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i]!;
+
+    if (ch === '\\') {
+      i += 2;
+      if (i > pattern.length) {
+        return false;
+      }
+      i = afterAtom(i, false) ?? -1;
+      if (i === -1) {
+        return false;
+      }
+      continue;
+    }
+
+    if (ch === '[') {
+      const end = skipCharacterClass(pattern, i);
+      if (end === null) {
+        return false;
+      }
+      const next = afterAtom(end, false);
+      if (next === null) {
+        return false;
+      }
+      i = next;
+      continue;
+    }
+
+    if (ch === '(') {
+      i = skipGroupHeader(pattern, i);
+      groupHasInnerQuantifier.push(false);
+      continue;
+    }
+
+    if (ch === ')') {
+      if (groupHasInnerQuantifier.length === 0) {
+        return false;
+      }
+      const innerQuantified = groupHasInnerQuantifier.pop()!;
+      i++;
+      const next = afterAtom(i, innerQuantified);
+      if (next === null) {
+        return false;
+      }
+      i = next;
+      continue;
+    }
+
+    if (ch === '^' || ch === '$' || ch === '|') {
+      i++;
+      continue;
+    }
+
+    i++;
+    const next = afterAtom(i, false);
+    if (next === null) {
+      return false;
+    }
+    i = next;
+  }
+
+  return groupHasInnerQuantifier.length === 0;
+}
+
+/** Safe subset check for manifest `format.pattern` (length, bounded quantifiers, no nested +/*). */
+export function isLinearishRegex(pattern: string): boolean {
+  if (pattern.length > FORMAT_PATTERN_MAX_LENGTH) {
+    return false;
+  }
+  try {
+    new RegExp(pattern);
+  } catch {
+    return false;
+  }
+  return scanLinearishPattern(pattern);
+}
+
+const formatPatternSchema = z
+  .string()
+  .max(FORMAT_PATTERN_MAX_LENGTH)
+  .refine(isLinearishRegex, {
+    message: 'format.pattern must be a safe, bounded regular expression',
+  });
+
 export const ManifestEntry = z
   .object({
     key: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
@@ -8,7 +226,7 @@ export const ManifestEntry = z
     secret: z.boolean().default(true),
     format: z
       .object({
-        pattern: z.string().optional(),
+        pattern: formatPatternSchema.optional(),
         minLength: z.number().int().optional(),
         maxLength: z.number().int().optional(),
         example: z.string().optional(),

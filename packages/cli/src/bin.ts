@@ -16,7 +16,7 @@ import { audit } from './commands/audit.js';
 import { mcp } from './commands/mcp.js';
 import { init } from './commands/init.js';
 
-const VERSION = '0.1.3';
+const VERSION = '0.1.5';
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
           finish(EXIT.USAGE);
           break;
         }
-        await revoke(root, key, json);
+        await revoke(root, key, json, parsed.flags.yes === true);
         break;
       }
 
@@ -162,7 +162,7 @@ function showHelp(): void {
 Usage: envseal <command> [options]
 
 Commands:
-  init [--host <name>]          Initialize env.schema.jsonc
+  init [--host <name>]          Initialize manifest, AGENTS.md, and host MCP
   ensure [--check]             Prompt for all missing required keys
                                (--check: report only, exit 0/1, never prompt)
   set <KEY>                     Prompt for a single key

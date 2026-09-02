@@ -5,11 +5,13 @@
  * the group/other-bits test produced 0o066 ≠ 0 and permissionsOk:false on
  * every Windows machine regardless of the real ACLs. The fix reports null
  * ("not measurable here") on win32; POSIX keeps the boolean. This pins the
- * honest shape on whatever platform runs the test.
+ * honest shape on whatever platform runs the test — on POSIX with an explicit
+ * mode, because the runner's umask leaves written files at 0o666 and the
+ * check would honestly report false.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +58,8 @@ describe('doctor envFile.permissionsOk honesty', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('reports null on Windows and a real boolean on POSIX', () => {
+  it('reports null on Windows and the real mode verdict on POSIX', () => {
+    if (process.platform !== 'win32') chmodSync(join(tempDir, '.env'), 0o600);
     const run = runDoctorJson(tempDir);
     expect(run.exitCode).toBe(0);
     const parsed = JSON.parse(run.stdout) as { envFile: DoctorEnvFile };
@@ -65,8 +68,16 @@ describe('doctor envFile.permissionsOk honesty', () => {
     if (process.platform === 'win32') {
       expect(parsed.envFile.permissionsOk).toBeNull();
     } else {
-      expect(typeof parsed.envFile.permissionsOk).toBe('boolean');
       expect(parsed.envFile.permissionsOk).toBe(true);
     }
+  });
+
+  it('reports false for a group/other-readable .env on POSIX', () => {
+    if (process.platform === 'win32') return;
+    chmodSync(join(tempDir, '.env'), 0o644);
+    const run = runDoctorJson(tempDir);
+    expect(run.exitCode).toBe(0);
+    const parsed = JSON.parse(run.stdout) as { envFile: DoctorEnvFile };
+    expect(parsed.envFile.permissionsOk).toBe(false);
   });
 });

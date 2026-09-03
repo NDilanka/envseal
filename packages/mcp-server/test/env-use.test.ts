@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,7 +91,7 @@ class McpChild {
     this.child.stdin.write(frame + '\n');
   }
 
-  async handshake(): Promise<void> {
+  async handshake(): Promise<JsonRpcResponse> {
     const init = await this.send('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
@@ -99,6 +99,7 @@ class McpChild {
     });
     expect(init.error, 'server failed to initialize').toBeUndefined();
     this.notify('notifications/initialized', {});
+    return init;
   }
 
   async callTool(name: string, args: unknown): Promise<string> {
@@ -287,12 +288,30 @@ describe('envseal-mcp argument handling', () => {
     expect(existsSync(join(dir, '.envseal'))).toBe(false);
   });
 
-  it('prints a version and exits 0', () => {
+  it('prints the shipped package version and exits 0', () => {
     const dir = project();
+    const pkg = JSON.parse(
+      readFileSync(resolve(HERE, '..', 'package.json'), 'utf8'),
+    ) as { version: string };
     const result = run(['--version'], dir);
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toMatch(/^envseal-mcp \d+\.\d+\.\d+$/);
+    expect(result.stdout.trim()).toBe(`envseal-mcp ${pkg.version}`);
     expect(existsSync(join(dir, '.envseal'))).toBe(false);
+  });
+
+  it('reports the shipped package version in the initialize handshake', async () => {
+    const dir = project();
+    const pkg = JSON.parse(
+      readFileSync(resolve(HERE, '..', 'package.json'), 'utf8'),
+    ) as { version: string };
+    const child = new McpChild(dir, {});
+    try {
+      const init = await child.handshake();
+      const info = (init.result ?? {}) as { serverInfo?: { version?: unknown } };
+      expect(info.serverInfo?.version).toBe(pkg.version);
+    } finally {
+      child.kill();
+    }
   });
 
   it.each([['--http'], ['--port', '3000'], ['--sse'], ['--project']])(

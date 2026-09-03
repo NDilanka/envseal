@@ -685,3 +685,14 @@ describe('init: --host validation and first-run guidance', () => {
     expect(['npx', 'npx.cmd']).toContain(mcp.mcpServers['envseal-mcp'].command);
   });
 });
+
+describe('--version: reports the shipped package version', () => {
+  it('prints the version from packages/cli/package.json and exits 0', () => {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    const r = runCli(tempDir, ['--version']);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout.trim()).toBe(`envseal version ${pkg.version}`);
+  });
+});

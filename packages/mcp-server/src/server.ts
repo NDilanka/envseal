@@ -16,6 +16,7 @@ import * as verify from './tools/verify.js';
 import * as use from './tools/use.js';
 import * as revoke from './tools/revoke.js';
 import { respondError } from './respond.js';
+import { VERSION } from './cli-args.js';
 
 const toolModules = [describe, declare, request, await_, verify, use, revoke];
 
@@ -23,7 +24,7 @@ export function createServer(broker: Broker): Server {
   // Capabilities must be declared up front or a client will never issue
   // tools/list, and the handlers below would be dead code.
   const server = new Server(
-    { name: 'envseal-mcp', version: '0.1.0' },
+    { name: 'envseal-mcp', version: VERSION },
     { capabilities: { tools: {} } },
   );
 

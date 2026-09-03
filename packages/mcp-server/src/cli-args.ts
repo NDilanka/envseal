@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { findProjectRoot } from '@envseal/core';
 
@@ -7,7 +7,21 @@ import { findProjectRoot } from '@envseal/core';
  * be tested without importing a module whose side effect is starting a server.
  */
 
-export const VERSION = '0.1.5';
+/**
+ * The shipped version, read from this package's own package.json so a release
+ * can never ship a stale hardcoded string again (0.1.6 and 0.1.7 both
+ * reported 0.1.5). Falls back to 'unknown' — never a wrong number.
+ */
+export const VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
 
 export const USAGE = `envseal-mcp ${VERSION}
 

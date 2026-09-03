@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { findProjectRoot } from '@envseal/core';
+import { readFileSync } from 'node:fs';
 import { EXIT } from './exit-codes.js';
 import { fail } from './output.js';
 import { finish } from './exit.js';
@@ -16,7 +17,21 @@ import { audit } from './commands/audit.js';
 import { mcp } from './commands/mcp.js';
 import { init } from './commands/init.js';
 
-const VERSION = '0.1.5';
+/**
+ * The shipped version, read from this package's own package.json so a release
+ * can never ship a stale hardcoded string again (0.1.6 and 0.1.7 both
+ * reported 0.1.5). Falls back to 'unknown' — never a wrong number.
+ */
+const VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

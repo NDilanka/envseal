@@ -299,7 +299,7 @@ envseal run -- npm test
 
 ### `envseal doctor`
 
-Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, `hookLastRan` (hook liveness), rotation advisories, count of missing required keys.
+Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, `hookLastRan` (hook liveness), `mcp.otherServers` (co-registered server names, advisory), rotation advisories, count of missing required keys.
 
 Folder presence is not wiring. For the detected **primary** host, doctor checks the project config `init` would have written. An empty `.cursor/mcp.json` `mcpServers` map is unwired (exit 1). Continue and Goose are **not OOTB** (print-only MCP).
 
@@ -318,6 +318,14 @@ for an entry, doctor lists keys whose stored value has aged past the policy.
 Advisory only — an overdue rotation never changes the exit code; rotate the
 credential at the provider, rewrite the value (`envseal set`), and the age
 re-stamps when the fingerprint changes.
+
+**Co-registered MCP servers.** Any MCP server besides `envseal-mcp` in the
+project config (for example a filesystem server) can read secret paths without
+touching the hook matcher. Doctor surfaces their names as `mcp.otherServers`
+in JSON and as one human line. Names only, never argv or env values: a sibling
+entry can hold a real credential, and doctor output must not become a new exfil
+channel. Advisory only — it never changes the exit code. The field is absent on
+hosts whose config shape carries no enumerable server list.
 
 **Flags:**
 - `--json` — Output as JSON.

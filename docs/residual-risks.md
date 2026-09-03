@@ -208,7 +208,7 @@ If you do not trust your harness, you should not run it on a machine with valuab
 
 The PreToolUse hook closes ~20 bypass classes as of the W9 round (see `docs/verification/W9-comment-redteam.md` for each with its repro and closing commit). Classes that remain open by design or for a later wave:
 
-- **MCP tool surfaces:** any MCP filesystem server the user registers can read secret paths without touching the Bash matcher. Native `Grep`/`Glob` calls ARE routed through the hook matcher on Claude Code, but only because the bundled plugin's matcher lists them — other tools and hosts are outside. Advisory only today.
+- **MCP tool surfaces:** any MCP filesystem server the user registers can read secret paths without touching the Bash matcher. Native `Grep`/`Glob` calls ARE routed through the hook matcher on Claude Code, but only because the bundled plugin's matcher lists them — other tools and hosts are outside. `envseal doctor` names the co-registered servers (`mcp.otherServers`, names only, advisory) so the exposure is visible; visibility is not enforcement.
 - **Fail-open:** when the hook itself crashes, Claude Code proceeds — a broken hook degrades to tier B silently except for a stderr notice. `envseal doctor` reports whether hook wiring is present, and (since the hook-heartbeat feature) when the hook last ran: the hook refreshes `.envseal/hook-heartbeat` after every decision, so a wiring-present-but-never-ran state is visible as "none recorded". A fresh timestamp proves liveness, not correctness — a hook that runs but decides wrongly leaves no trace here.
 - **Same-uid reachability:** the macOS keychain sink resolves values through CLI tools the agent could also invoke directly; inherent to running everything under one uid (see §3).
 

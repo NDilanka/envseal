@@ -109,11 +109,18 @@ export function inspectCopilotSettings(
   }
 
   const entry = list.find((item) => entryName(item) === ENVSEAL_MCP_SERVER_NAME);
+  // Names only, never entry values: a sibling argv or env block can hold a
+  // real credential, and doctor output must not become a new exfil channel.
+  const otherServers = list
+    .map((item) => entryName(item))
+    .filter((name): name is string => name !== undefined && name !== ENVSEAL_MCP_SERVER_NAME)
+    .sort();
   if (entry === undefined || isEmptyEnvsealStub(entry) || !looksLikeEnvsealServer(entry)) {
     return {
       wired: false,
       status: entry === undefined ? 'missing' : 'stub',
       commandOk: null,
+      otherServers,
       message: `.vscode/settings.json github.copilot.mcp has no working envseal-mcp. ${hint}`,
     };
   }
@@ -125,5 +132,5 @@ export function inspectCopilotSettings(
     message =
       'Copilot MCP is configured, but the launch command did not report a version. Run `envseal init`. [VERIFY]';
   }
-  return { wired: true, status: 'wired', commandOk, message };
+  return { wired: true, status: 'wired', commandOk, otherServers, message };
 }

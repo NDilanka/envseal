@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { applyHostWiring } from '../src/host-wiring/apply.js';
 import { AGENTS_MD_CONTENT } from '../src/host-wiring/agents-md-content.js';
 import { AIDER_CONF_YML } from '../src/host-wiring/aider-conf.js';
-import { mcpLaunch } from '../src/host-wiring/mcp.js';
+import { mcpLaunch, siblingServerNames } from '../src/host-wiring/mcp.js';
 import { mergeAgentsMd, hasEnvsealImperative } from '../src/host-wiring/agents-md.js';
 import { aiderReadListIncludesEnv } from '../src/host-wiring/aider.js';
 import { continueSnippetYaml } from '../src/host-wiring/continue.js';
@@ -323,6 +323,24 @@ describe('envseal init (dist)', () => {
   });
 });
 
+describe('siblingServerNames', () => {
+  it('lists co-registered servers sorted, excluding envseal-mcp', () => {
+    expect(
+      siblingServerNames({
+        'envseal-mcp': { command: 'npx', args: ['-y', '@envseal/mcp-server'] },
+        filesystem: { command: 'npx', args: ['-y', 'server-filesystem'] },
+        memory: { command: 'npx', args: ['-y', 'server-memory'] },
+      }),
+    ).toEqual(['filesystem', 'memory']);
+  });
+
+  it('returns an empty list when envseal-mcp is alone', () => {
+    expect(
+      siblingServerNames({ 'envseal-mcp': { command: 'npx.cmd', args: ['-y', '@envseal/mcp-server'] } }),
+    ).toEqual([]);
+  });
+});
+
 describe('envseal doctor wiring (dist)', () => {
   let root: string;
 
@@ -382,5 +400,48 @@ describe('envseal doctor wiring (dist)', () => {
     expect(parsed.agentWiring.mcp).toBe('missing');
     expect(parsed.agentWiring.instructions).toBe('ok');
     expect(parsed.mcp?.message).toMatch(/not OOTB/i);
+  });
+
+  it('lists sibling MCP servers as advisory and keeps exit 0', () => {
+    const init = runInit(root, ['--host', 'cursor']);
+    expect(init.status, init.stderr).toBe(0);
+    const mcpPath = join(root, '.cursor', 'mcp.json');
+    const config = JSON.parse(readFileSync(mcpPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    config.mcpServers.filesystem = {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', root],
+    };
+    writeFileSync(mcpPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+    const r = runDoctor(root);
+    expect(r.status, r.stdout).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      agentWiring: { mcp: string };
+      mcp?: { wired: boolean; otherServers?: string[] };
+    };
+    expect(parsed.agentWiring.mcp).toBe('ok');
+    expect(parsed.mcp?.wired).toBe(true);
+    expect(parsed.mcp?.otherServers).toEqual(['filesystem']);
+  });
+
+  it('reports sibling server names but never their config values', () => {
+    const init = runInit(root, ['--host', 'cursor']);
+    expect(init.status, init.stderr).toBe(0);
+    const sentinel = 'SIBLING_SENTINEL_no_real_secret_9f8c';
+    const mcpPath = join(root, '.cursor', 'mcp.json');
+    const config = JSON.parse(readFileSync(mcpPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    config.mcpServers.filesystem = {
+      command: 'npx',
+      args: ['-y', 'server-filesystem', sentinel],
+      env: { EXTRA_TOKEN: sentinel },
+    };
+    writeFileSync(mcpPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+    const r = runDoctor(root);
+    expect(r.status, r.stdout).toBe(0);
+    expect(r.stdout).toContain('filesystem');
+    expect(r.stdout).not.toContain(sentinel);
   });
 });

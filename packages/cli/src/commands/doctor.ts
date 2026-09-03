@@ -95,6 +95,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
               status: inspection.mcp.status,
               message: inspection.mcp.message,
               commandOk: inspection.mcp.commandOk,
+              ...(inspection.mcp.otherServers === undefined
+                ? {}
+                : { otherServers: inspection.mcp.otherServers }),
             },
           }),
     };
@@ -119,6 +122,12 @@ export async function doctor(root: string, json: boolean): Promise<void> {
         `Hook on internal error: ${hookFailClosed ? 'fail-closed' : 'fail-open (default)'}`,
       );
       console.log(`Hook heartbeat: ${describeHeartbeatAge(hookLastRan)}`);
+      const siblings = inspection.mcp?.otherServers ?? [];
+      if (siblings.length > 0) {
+        console.log(
+          `Other MCP servers (outside envseal read protection): ${siblings.join(', ')}`,
+        );
+      }
       console.log(`Missing required keys: ${status.missingRequired.length}`);
       if (status.missingRequired.length > 0) {
         for (const key of status.missingRequired) {

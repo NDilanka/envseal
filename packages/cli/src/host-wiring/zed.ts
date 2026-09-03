@@ -9,6 +9,7 @@ import {
   writeJson,
   classifyEntry,
   probeVersion,
+  siblingServerNames,
   type McpInspection,
   type McpWriteAction,
 } from './mcp.js';
@@ -98,11 +99,13 @@ export function inspectZedSettings(
 
   const entry = mcp[ENVSEAL_MCP_SERVER_NAME];
   const kind = classifyEntry(entry);
+  const otherServers = siblingServerNames(mcp);
   if (kind === 'missing') {
     return {
       wired: false,
       status: 'missing',
       commandOk: null,
+      otherServers,
       message: `.zed/settings.json has no envseal-mcp. ${hint}`,
     };
   }
@@ -111,6 +114,7 @@ export function inspectZedSettings(
       wired: false,
       status: 'stub',
       commandOk: null,
+      otherServers,
       message: `.zed/settings.json envseal-mcp is the empty stub. ${hint}`,
     };
   }
@@ -122,5 +126,5 @@ export function inspectZedSettings(
     message =
       'Zed MCP is configured, but the launch command did not report a version. Run `envseal init`. [VERIFY]';
   }
-  return { wired: true, status: 'wired', commandOk, message };
+  return { wired: true, status: 'wired', commandOk, otherServers, message };
 }

@@ -20,7 +20,24 @@ export type McpInspection = {
   message: string;
   /** null when the launch command was not probed (npx is not side-effect free). */
   commandOk: boolean | null;
+  /**
+   * Names of co-registered MCP servers besides envseal-mcp. Names only, never
+   * entry values: a sibling argv or env block can hold a real credential, and
+   * doctor output must not become a new exfil channel. Undefined when the host
+   * config shape carries no enumerable server list.
+   */
+  otherServers?: string[];
 };
+
+/**
+ * Sorted names of every server in a `mcpServers`-style map except envseal-mcp.
+ * Keys only: callers must never forward the entry values.
+ */
+export function siblingServerNames(servers: Record<string, unknown>): string[] {
+  return Object.keys(servers)
+    .filter((name) => name !== ENVSEAL_MCP_SERVER_NAME)
+    .sort();
+}
 
 /**
  * Launch argv a host can spawn without a global `envseal-mcp` on PATH.
@@ -235,11 +252,13 @@ export function inspectMcpServersFile(
 
   const entry = servers[ENVSEAL_MCP_SERVER_NAME];
   const kind = classifyEntry(entry);
+  const otherServers = siblingServerNames(servers);
   if (kind === 'missing') {
     return {
       wired: false,
       status: 'missing',
       commandOk: null,
+      otherServers,
       message: `${label} has no envseal-mcp. ${hint}`,
     };
   }
@@ -248,6 +267,7 @@ export function inspectMcpServersFile(
       wired: false,
       status: 'stub',
       commandOk: null,
+      otherServers,
       message: `${label} envseal-mcp is the empty envseal-mcp stub (not on PATH for the host). ${hint}`,
     };
   }
@@ -258,7 +278,7 @@ export function inspectMcpServersFile(
   if (commandOk === false) {
     message = `MCP is configured in ${label}, but the launch command did not report a version. Run \`envseal init\` if the host cannot connect.`;
   }
-  return { wired: true, status: 'wired', commandOk, message };
+  return { wired: true, status: 'wired', commandOk, otherServers, message };
 }
 
 /** Map an inspection to the doctor `agentWiring.mcp` field. */

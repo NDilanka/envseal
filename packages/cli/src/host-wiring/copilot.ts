@@ -111,10 +111,14 @@ export function inspectCopilotSettings(
   const entry = list.find((item) => entryName(item) === ENVSEAL_MCP_SERVER_NAME);
   // Names only, never entry values: a sibling argv or env block can hold a
   // real credential, and doctor output must not become a new exfil channel.
-  const otherServers = list
-    .map((item) => entryName(item))
-    .filter((name): name is string => name !== undefined && name !== ENVSEAL_MCP_SERVER_NAME)
-    .sort();
+  // List configs can repeat a name; report each server once.
+  const otherServers = [
+    ...new Set(
+      list
+        .map((item) => entryName(item))
+        .filter((name): name is string => name !== undefined && name !== ENVSEAL_MCP_SERVER_NAME),
+    ),
+  ].sort();
   if (entry === undefined || isEmptyEnvsealStub(entry) || !looksLikeEnvsealServer(entry)) {
     return {
       wired: false,

@@ -19,6 +19,7 @@ import { mcpLaunch, siblingServerNames } from '../src/host-wiring/mcp.js';
 import { mergeAgentsMd, hasEnvsealImperative } from '../src/host-wiring/agents-md.js';
 import { aiderReadListIncludesEnv } from '../src/host-wiring/aider.js';
 import { continueSnippetYaml } from '../src/host-wiring/continue.js';
+import { inspectCopilotSettings } from '../src/host-wiring/copilot.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -338,6 +339,26 @@ describe('siblingServerNames', () => {
     expect(
       siblingServerNames({ 'envseal-mcp': { command: 'npx.cmd', args: ['-y', '@envseal/mcp-server'] } }),
     ).toEqual([]);
+  });
+
+  it('dedupes repeat names from list-shaped Copilot configs', () => {
+    const root = fixture();
+    try {
+      mkdirSync(join(root, '.vscode'), { recursive: true });
+      writeFileSync(
+        join(root, '.vscode', 'settings.json'),
+        JSON.stringify({
+          'github.copilot.mcp': [
+            { name: 'envseal-mcp', command: 'npx', args: ['-y', '@envseal/mcp-server'] },
+            { name: 'filesystem', command: 'npx', args: ['-y', 'server-filesystem'] },
+            { name: 'filesystem', command: 'npx', args: ['-y', 'server-filesystem'] },
+          ],
+        }) + '\n',
+      );
+      expect(inspectCopilotSettings(root).otherServers).toEqual(['filesystem']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

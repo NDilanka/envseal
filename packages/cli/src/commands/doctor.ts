@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { SepError } from '@envseal/protocol';
-import { inspectDotenvGitSafety, loadManifest, projectPaths, readHookHeartbeat } from '@envseal/core';
+import { inspectDotenvGitSafety, loadManifest, projectPaths, readHookDecisions, readHookHeartbeat } from '@envseal/core';
 import { emit, fail } from '../output.js';
 import { EXIT } from '../exit-codes.js';
 import { detectHost } from '../host.js';
@@ -59,6 +59,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
     const egress = manifest?.policy?.egress;
     const inspection = inspectPrimaryHostWiring(root, host.id, { probe: true });
     const hookLastRan = readHookHeartbeat(root);
+    const hookDecisions = readHookDecisions(root);
     const output = {
       projectRoot: root,
       manifestPath,
@@ -82,6 +83,7 @@ export async function doctor(root: string, json: boolean): Promise<void> {
       egressPolicy: egress ?? { mode: 'warn', allow: [] },
       hookFailClosed,
       hookLastRan,
+      hookDecisions,
       missingRequiredCount: status.missingRequired.length,
       missingRequired: status.missingRequired,
       rotationOverdue: status.entries
@@ -122,6 +124,9 @@ export async function doctor(root: string, json: boolean): Promise<void> {
         `Hook on internal error: ${hookFailClosed ? 'fail-closed' : 'fail-open (default)'}`,
       );
       console.log(`Hook heartbeat: ${describeHeartbeatAge(hookLastRan)}`);
+      if (hookDecisions !== null) {
+        console.log(`Hook decisions (approx): ${hookDecisions.allow} allow, ${hookDecisions.deny} deny`);
+      }
       const siblings = inspection.mcp?.otherServers ?? [];
       if (siblings.length > 0) {
         console.log(

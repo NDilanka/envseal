@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -22,6 +22,7 @@ import {
   stripEnvInvocationPrefix,
   ENV_SCHEMA_SECRET_DENY_REASON,
 } from '../hooks/pre-tool-use.js';
+import { recordHookDecision, readHookDecisions } from '@envseal/core';
 
 describe('pre-tool-use hook', () => {
   describe('isDeniedSecretPath', () => {
@@ -1138,6 +1139,39 @@ describe('pre-tool-use hook', () => {
       expect(written).toHaveLength(1);
       const raw = readFileSync(join(tmp, '.envseal', 'hook-heartbeat'), 'utf8').trim();
       expect(() => Date.parse(raw)).not.toThrow();
+    });
+
+    it('recordHookDecision counts allows and denies', () => {
+      recordHookDecision(tmp, true);
+      recordHookDecision(tmp, true);
+      recordHookDecision(tmp, false);
+
+      expect(readHookDecisions(tmp)).toEqual({ allow: 2, deny: 1 });
+    });
+
+    it('readHookDecisions returns null when no counter file exists', () => {
+      expect(readHookDecisions(tmp)).toBeNull();
+    });
+
+    it('readHookDecisions returns null for a corrupt counter file', () => {
+      mkdirSync(join(tmp, '.envseal'), { recursive: true });
+      writeFileSync(join(tmp, '.envseal', 'hook-decisions'), 'not json\n', 'utf8');
+
+      expect(readHookDecisions(tmp)).toBeNull();
+    });
+
+    it('run() records a deny for a blocked reader', async () => {
+      const written: unknown[] = [];
+      await run({
+        read: () => Promise.resolve({ tool: 'Bash', command: 'cat .env', cwd: tmp }),
+        write: (result: unknown) => {
+          written.push(result);
+        },
+        error: () => {},
+      });
+
+      expect(written).toHaveLength(1);
+      expect(readHookDecisions(tmp)).toEqual({ allow: 0, deny: 1 });
     });
   });
 });

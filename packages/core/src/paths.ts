@@ -119,3 +119,70 @@ export function readHookHeartbeat(root: string): string | null {
     return null;
   }
 }
+
+// --- Hook decision counters --------------------------------------------------
+//
+// The heartbeat proves the hook RAN; it says nothing about whether the matcher
+// ever fires. These cumulative allow/deny counters answer that next question:
+// a hook that runs but decides wrongly (or is neutered to allow everything)
+// shows allow > 0 with deny stuck at 0. They prove the matcher FIRES, not that
+// every decision is right — a same-uid agent can rewrite them, so they are
+// observational and advisory, exactly like the heartbeat.
+//
+// Deliberately a SECOND file, not a second line in the heartbeat: older
+// readers parse the heartbeat as a bare timestamp, and an unreadable new
+// format would regress them to "never ran". An absent counter file reads as
+// null ("unknown", pre-counters hook), never as zero.
+//
+// Counts are approximate under concurrent hook invocations (read-modify-write
+// can lose an increment). Direction survives imprecision: deny > 0 still
+// proves a deny happened.
+
+export const HOOK_DECISIONS_FILE = 'hook-decisions';
+
+export interface HookDecisions {
+  allow: number;
+  deny: number;
+}
+
+function isHookDecisions(value: unknown): value is HookDecisions {
+  if (typeof value !== 'object' || value === null) return false;
+  const rec = value as Record<string, unknown>;
+  return (
+    typeof rec.allow === 'number' &&
+    Number.isInteger(rec.allow) &&
+    rec.allow >= 0 &&
+    typeof rec.deny === 'number' &&
+    Number.isInteger(rec.deny) &&
+    rec.deny >= 0
+  );
+}
+
+/** Cumulative hook decisions for a project, or null when unknown. */
+export function readHookDecisions(root: string): HookDecisions | null {
+  try {
+    const raw = readFileSync(join(resolve(root), '.envseal', HOOK_DECISIONS_FILE), 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    return isHookDecisions(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Increment the allow or deny counter. Never throws; never touches decisions. */
+export function recordHookDecision(root: string, allow: boolean): void {
+  try {
+    const stateDir = join(resolve(root), '.envseal');
+    const marker = join(stateDir, HOOK_DECISIONS_FILE);
+    const current = readHookDecisions(root) ?? { allow: 0, deny: 0 };
+    if (allow) {
+      current.allow += 1;
+    } else {
+      current.deny += 1;
+    }
+    mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+    writeFileSync(marker, `${JSON.stringify(current)}\n`, { mode: 0o600 });
+  } catch {
+    // Observational only — an unwritable counter changes nothing.
+  }
+}

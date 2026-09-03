@@ -299,7 +299,7 @@ envseal run -- npm test
 
 ### `envseal doctor`
 
-Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, `hookLastRan` (hook liveness), `mcp.otherServers` (co-registered server names, advisory), rotation advisories, count of missing required keys.
+Audit the project configuration. Reports: project root, manifest path, detected host + tier + recommendation, **agent wiring** (MCP + Layer 1 `AGENTS.md`), gitignore coverage (ignore-rule semantics, not substring match), `.env` tracked/permissions, effective egress policy, `hookFailClosed`, `hookLastRan` (hook liveness), `hookDecisions` (allow/deny counters, advisory), `mcp.otherServers` (co-registered server names, advisory), rotation advisories, count of missing required keys.
 
 Folder presence is not wiring. For the detected **primary** host, doctor checks the project config `init` would have written. An empty `.cursor/mcp.json` `mcpServers` map is unwired (exit 1). Continue and Goose are **not OOTB** (print-only MCP).
 
@@ -312,6 +312,15 @@ hook records (at most once per minute) in `.envseal/hook-heartbeat` after every
 decision. It is observational: `null` means the hook has never run for this
 project (or the plugin predates the heartbeat), and a fresh timestamp proves
 liveness, not correctness. Human output prints it as a relative age.
+
+**Hook decision counters.** The hook records cumulative allow/deny counters in
+`.envseal/hook-decisions` next to the heartbeat, and doctor reports them as
+`hookDecisions` (human: `Hook decisions (approx): 41 allow, 3 deny`). They
+prove the matcher FIRES, not that every decision is right: allow > 0 with deny
+stuck at 0 means the hook runs but never blocks. Absent file reads as null
+("unknown", pre-counters hook), never as zero. Counts are approximate under
+concurrent invocations and same-uid rewritable, so advisory only — never the
+exit code.
 
 **Rotation advisories.** When the manifest declares `rotation: { maxAgeDays }`
 for an entry, doctor lists keys whose stored value has aged past the policy.

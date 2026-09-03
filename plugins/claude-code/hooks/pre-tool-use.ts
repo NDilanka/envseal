@@ -1,4 +1,4 @@
-import { findProjectRoot, HOOK_HEARTBEAT_FILE, loadManifest, projectPaths } from '@envseal/core';
+import { findProjectRoot, HOOK_HEARTBEAT_FILE, loadManifest, projectPaths, recordHookDecision } from '@envseal/core';
 import { detect } from '@envseal/detector';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -1250,6 +1250,7 @@ export function run(io: RunIo = DEFAULT_IO): Promise<void> {
       // After the decision, never before: the heartbeat is observational and
       // must not sit on the path that produces it.
       touchHookHeartbeat(findProjectRoot(root));
+      recordHookDecision(findProjectRoot(root), decision.allow);
       return toHookOutput(decision);
     })
     .then((result) => {

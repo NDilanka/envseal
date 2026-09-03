@@ -465,4 +465,17 @@ describe('envseal doctor wiring (dist)', () => {
     expect(r.stdout).toContain('filesystem');
     expect(r.stdout).not.toContain(sentinel);
   });
+
+  it('reports hook decision counters and stays null when absent', () => {
+    const init = runInit(root, ['--host', 'cursor']);
+    expect(init.status, init.stderr).toBe(0);
+    let parsed = JSON.parse(runDoctor(root).stdout) as { hookDecisions: unknown };
+    expect(parsed.hookDecisions).toBeNull();
+    mkdirSync(join(root, '.envseal'), { recursive: true });
+    writeFileSync(join(root, '.envseal', 'hook-decisions'), '{"allow":41,"deny":3}\n', 'utf8');
+    const r = runDoctor(root);
+    expect(r.status, r.stdout).toBe(0);
+    parsed = JSON.parse(r.stdout) as { hookDecisions: unknown };
+    expect(parsed.hookDecisions).toEqual({ allow: 41, deny: 3 });
+  });
 });
